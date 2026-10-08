@@ -58,6 +58,15 @@ In order to dissociate the internal state of each agent, it has a five-part arra
 
 
 
+## Build
+
+The project is built with Gradle (wrapper included) and requires **Java 21**. Gradle downloads a JDK 21 toolchain if none is installed.
+
+```
+./gradlew build        # compile, run tests, build jars in build/libs
+./gradlew publishToMavenLocal
+```
+
 ## How to use it
 
 
@@ -173,6 +182,47 @@ public class Waiting extends Agent {
 ```
 
 
+### Messages between nodes (network transports)
+
+Messages received through the UDP / Multicast transports are deserialized with a
+class allowlist (JavaMAS classes, `String`, boxed primitives, basic collections...).
+Classes used as message content must be allowed explicitly before receiving them:
+
+```java
+SecureObjectInputStream.allowClass(MyContent.class);
+// or
+SecureObjectInputStream.allowPackage("com.example.content");
+```
 
 
+### Sensors and probes
 
+```java
+// Sensor : the agent's handleSensor(Sensor<?>) is called each time the value changes
+Sensor<Integer> thermal = new Sensor<>(SensorType.THERMAL);
+agent.getSensorsManager().addSensor(thermal);
+thermal.setValue(21);
+
+// Probe : observe the values published by an agent with probe(description, value)
+agent.getProbesManager().addProbe(Probe.of(AgentProbeValue.class, value -> System.out.println(value)));
+```
+
+Sensor types can also be given as `int` constants (`Sensor.THERMAL`...).
+
+### Transports
+
+```java
+Map<String, String> params = Map.of(TransportMulticast.IP, "239.255.80.84", TransportMulticast.PORT, "7889");
+Node.getHandle().addTransport(TransportFactory.getTransport(TransportFactory.TransportType.MULTICAST, params));
+```
+
+### Threads
+
+`agent.start()` runs the agent in a platform thread (daemon or not, see the constructors).
+`agent.startVirtual()` runs it in a virtual thread : thousands of agents can wait for
+messages at a low cost, but virtual threads don't keep the JVM alive.
+
+### Logging
+
+JavaMAS logs through `System.Logger` (java.util.logging by default, or SLF4J / Log4j
+when one of their `System.LoggerFinder` bridges is on the classpath).
