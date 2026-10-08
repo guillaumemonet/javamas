@@ -23,35 +23,35 @@
  */
 package fr.eloane.javamas.kernel.probes;
 
-import java.util.function.Consumer;
+import fr.eloane.javamas.kernel.Address;
+import java.io.Serializable;
+import java.time.Instant;
 
 /**
- * Observe the values published by an agent
+ * Value published by an agent to its probes
  *
+ * @param agent the agent publishing the value
+ * @param name name of the value, e.g. {@link #STATE}
+ * @param value the value
+ * @param time when the value was published
  * @author Guillaume Monet
  */
-@FunctionalInterface
-public interface Probe {
+public record ProbeValue(Address agent, String name, Object value, Instant time) implements Serializable {
 
     /**
-     *
-     * @param value value published by the agent
+     * Published by every agent when its life cycle state changes, the value is
+     * an {@link fr.eloane.javamas.kernel.AgentState}
      */
-    void handleProbe(ProbeValue value);
+    public static final String STATE = "state";
 
     /**
-     *
-     * @param <T> type of the values
-     * @param name name of the values to observe
-     * @param type type of the values to observe
-     * @param handler called with each value of this name and type
-     * @return a probe observing only the values with this name and type
+     * Published by every agent when the size of its mailbox changes, the value
+     * is an Integer
      */
-    static <T> Probe of(String name, Class<T> type, Consumer<? super T> handler) {
-        return value -> {
-            if (value.name().equals(name) && type.isInstance(value.value())) {
-                handler.accept(type.cast(value.value()));
-            }
-        };
+    public static final String MAILBOX_SIZE = "mailbox.size";
+
+    @Override
+    public String toString() {
+        return agent + " " + name + "=" + value;
     }
 }

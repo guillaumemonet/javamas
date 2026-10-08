@@ -24,303 +24,59 @@
 package fr.eloane.javamas.kernel.messages;
 
 import java.io.Serial;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Locale;
+import java.util.Objects;
 
 /**
- * Original Work by the MaDKit Team : message send by Agents
+ * FIPA ACL message : a performative and a textual content.<br />
+ * Original Work by the MaDKit Team.
+ *
+ * @author Guillaume Monet
  */
 public final class ACLMessage extends Message<String> {
 
-    /**
-     * constant identifying the FIPA performative *
-     */
-    public static final int ACCEPT_PROPOSAL = 0;
-    /**
-     * constant identifying the FIPA performative *
-     */
-    public static final int AGREE = 1;
-    /**
-     * constant identifying the FIPA performative *
-     */
-    public static final int CANCEL = 2;
-    /**
-     * constant identifying the FIPA performative *
-     */
-    public static final int CFP = 3;
-    /**
-     * constant identifying the FIPA performative *
-     */
-    public static final int CONFIRM = 4;
-    /**
-     * constant identifying the FIPA performative *
-     */
-    public static final int DISCONFIRM = 5;
-    /**
-     * constant identifying the FIPA performative *
-     */
-    public static final int FAILURE = 6;
-    /**
-     * constant identifying the FIPA performative *
-     */
-    public static final int INFORM = 7;
-    /**
-     * constant identifying the FIPA performative *
-     */
-    public static final int INFORM_IF = 8;
-    /**
-     * constant identifying the FIPA performative *
-     */
-    public static final int INFORM_REF = 9;
-    /**
-     * constant identifying the FIPA performative *
-     */
-    public static final int NOT_UNDERSTOOD = 10;
-    /**
-     * constant identifying the FIPA performative *
-     */
-    public static final int PROPOSE = 11;
-    /**
-     * constant identifying the FIPA performative *
-     */
-    public static final int QUERY_IF = 12;
-    /**
-     * constant identifying the FIPA performative *
-     */
-    public static final int QUERY_REF = 13;
-    /**
-     * constant identifying the FIPA performative *
-     */
-    public static final int REFUSE = 14;
-    /**
-     * constant identifying the FIPA performative *
-     */
-    public static final int REJECT_PROPOSAL = 15;
-    /**
-     * constant identifying the FIPA performative *
-     */
-    public static final int REQUEST = 16;
-    /**
-     * constant identifying the FIPA performative *
-     */
-    public static final int REQUEST_WHEN = 17;
-    /**
-     * constant identifying the FIPA performative *
-     */
-    public static final int REQUEST_WHENEVER = 18;
-    /**
-     * constant identifying the FIPA performative *
-     */
-    public static final int SUBSCRIBE = 19;
-    /**
-     * constant identifying the FIPA performative *
-     */
-    public static final int PROXY = 20;
-    /**
-     * constant identifying the FIPA performative *
-     */
-    public static final int PROPAGATE = 21;
-    /**
-     * constant identifying an unknown performative *
-     */
-    public static final int UNKNOWN = -1;
-    /**
-     *
-     */
-    public static final String ACCEPT_PROPOSAL_STRING = "ACCEPT-PROPOSAL";
-    /**
-     *
-     */
-    public static final String AGREE_STRING = "AGREE";
-    /**
-     *
-     */
-    public static final String CANCEL_STRING = "CANCEL";
-    /**
-     *
-     */
-    public static final String CFP_STRING = "CFP";
-    /**
-     *
-     */
-    public static final String CONFIRM_STRING = "CONFIRM";
-    /**
-     *
-     */
-    public static final String DISCONFIRM_STRING = "DISCONFIRM";
-    /**
-     *
-     */
-    public static final String FAILURE_STRING = "FAILURE";
-    /**
-     *
-     */
-    public static final String INFORM_STRING = "INFORM";
-    /**
-     *
-     */
-    public static final String INFORM_IF_STRING = "INFORM-IF";
-    /**
-     *
-     */
-    public static final String INFORM_REF_STRING = "INFORM-REF";
-    /**
-     *
-     */
-    public static final String NOT_UNDERSTOOD_STRING = "NOT-UNDERSTOOD";
-    /**
-     *
-     */
-    public static final String PROPOSE_STRING = "PROPOSE";
-    /**
-     *
-     */
-    public static final String QUERY_IF_STRING = "QUERY-IF";
-    /**
-     *
-     */
-    public static final String QUERY_REF_STRING = "QUERY-REF";
-    /**
-     *
-     */
-    public static final String REFUSE_STRING = "REFUSE";
-    /**
-     *
-     */
-    public static final String REJECT_PROPOSAL_STRING = "REJECT-PROPOSAL";
-    /**
-     *
-     */
-    public static final String REQUEST_STRING = "REQUEST";
-    /**
-     *
-     */
-    public static final String REQUEST_WHEN_STRING = "REQUEST-WHEN";
-    /**
-     *
-     */
-    public static final String REQUEST_WHENEVER_STRING = "REQUEST-WHENEVER";
-    /**
-     *
-     */
-    public static final String SUBSCRIBE_STRING = "SUBSCRIBE";
-    /**
-     *
-     */
-    public static final String PROXY_STRING = "PROXY";
-    /**
-     *
-     */
-    public static final String PROPAGATE_STRING = "PROPAGATE";
-    /**
-     *
-     */
-    /**
-     * The performatives, indexed by their constant
-     */
-    public static final ArrayList<String> PERFORMATIVES = new ArrayList<>(List.of(
-            ACCEPT_PROPOSAL_STRING,
-            AGREE_STRING,
-            CANCEL_STRING,
-            CFP_STRING,
-            CONFIRM_STRING,
-            DISCONFIRM_STRING,
-            FAILURE_STRING,
-            INFORM_STRING,
-            INFORM_IF_STRING,
-            INFORM_REF_STRING,
-            NOT_UNDERSTOOD_STRING,
-            PROPOSE_STRING,
-            QUERY_IF_STRING,
-            QUERY_REF_STRING,
-            REFUSE_STRING,
-            REJECT_PROPOSAL_STRING,
-            REQUEST_STRING,
-            REQUEST_WHEN_STRING,
-            REQUEST_WHENEVER_STRING,
-            SUBSCRIBE_STRING,
-            PROXY_STRING,
-            PROPAGATE_STRING));
     @Serial
-    private static final long serialVersionUID = -2112713185673830635L;
+    private static final long serialVersionUID = 2L;
 
-    private String action;
-
-    /**
-     * Default constructor for ACLMessage class
-     */
-    public ACLMessage() {
-        action = NOT_UNDERSTOOD_STRING;
-        content = "NO_CONTENT";
-    }
+    private final Performative performative;
 
     /**
-     * Constructor for ACLMessage class
      *
-     * @param actType the performative
+     * @param performative
+     * @param content
      */
-    public ACLMessage(String actType) {
-        action = actType.toUpperCase(Locale.ROOT);
+    public ACLMessage(Performative performative, String content) {
+        super(content);
+        this.performative = Objects.requireNonNull(performative);
+    }
+
+    @Override
+    public ACLMessage copy() {
+        return (ACLMessage) super.copy();
     }
 
     /**
-     * Constructor for ACLMessage class
+     * Reply with a performative, same conversation
      *
-     * @param actType the performative
-     * @param cont the content of the message
+     * @param performative
+     * @param content
+     * @return the reply
      */
-    public ACLMessage(String actType, String cont) {
-        action = actType.toUpperCase(Locale.ROOT);
-        content = cont;
+    public ACLMessage reply(Performative performative, String content) {
+        ACLMessage reply = new ACLMessage(performative, content);
+        reply.conversation(this.getConversationId());
+        reply.header(IN_REPLY_TO, this.getId());
+        if (this.getSender() != null) {
+            reply.to(this.getSender());
+        }
+        return reply;
     }
 
-    /**
-     * Constructor for ACLMessage class
-     *
-     * @param perf a performative as an integer
-     * @param cont the content of the message
-     */
-    public ACLMessage(int perf, String cont) {
-        this.action = perf >= 0 && perf < PERFORMATIVES.size() ? PERFORMATIVES.get(perf) : "UNKNOWN";
-        this.content = cont;
+    public Performative getPerformative() {
+        return performative;
     }
 
-    /**
-     * return the performative
-     *
-     * @return String
-     */
-    public String getAct() {
-        return action;
-    }
-
-    /**
-     * @return
-     */
-    public String getPerformative() {
-        return getAct();
-    }
-
-    /**
-     * @return
-     */
-    public String getValue() {
-        return getContent();
-    }
-
-    /**
-     * @param action
-     */
-    public void setPerformative(String action) {
-        this.action = action;
-    }
-
-    /**
-     * @return
-     */
     @Override
     public String toString() {
-        return action + " " + content;
+        return "(" + performative.fipaName() + " :sender " + getSender() + " :content \"" + getContent() + "\")";
     }
 }

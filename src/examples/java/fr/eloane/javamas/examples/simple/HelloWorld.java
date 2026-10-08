@@ -21,37 +21,45 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-package fr.eloane.javamas.kernel.probes;
+package fr.eloane.javamas.examples.simple;
 
-import java.util.function.Consumer;
+import fr.eloane.javamas.kernel.Agent;
+import fr.eloane.javamas.kernel.messages.Message;
+import fr.eloane.javamas.kernel.organization.Target;
+import java.time.Duration;
 
 /**
- * Observe the values published by an agent
- *
- * @author Guillaume Monet
+ * Two agents of the same community : the sender says hello to the community,
+ * the listener prints what it receives.
  */
-@FunctionalInterface
-public interface Probe {
+public class HelloWorld {
 
-    /**
-     *
-     * @param value value published by the agent
-     */
-    void handleProbe(ProbeValue value);
+    static class Listener extends Agent {
 
-    /**
-     *
-     * @param <T> type of the values
-     * @param name name of the values to observe
-     * @param type type of the values to observe
-     * @param handler called with each value of this name and type
-     * @return a probe observing only the values with this name and type
-     */
-    static <T> Probe of(String name, Class<T> type, Consumer<? super T> handler) {
-        return value -> {
-            if (value.name().equals(name) && type.isInstance(value.value())) {
-                handler.accept(type.cast(value.value()));
-            }
-        };
+        @Override
+        protected void activate() {
+            getOrganization().joinCommunity("WORLD");
+        }
+
+        @Override
+        protected void live() {
+            Message<?> message = receive(Duration.ofSeconds(5));
+            println(message == null ? "nobody said anything" : "received " + message.getContent());
+        }
+    }
+
+    static class Sender extends Agent {
+
+        @Override
+        protected void live() {
+            send(new Message<>("Hello World").to(Target.community("WORLD")));
+        }
+    }
+
+    public static void main(String[] args) throws InterruptedException {
+        Thread listener = new Listener().start();
+        Thread.sleep(100);
+        new Sender().start();
+        listener.join();
     }
 }

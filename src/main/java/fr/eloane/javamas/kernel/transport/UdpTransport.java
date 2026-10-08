@@ -21,37 +21,43 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-package fr.eloane.javamas.kernel.probes;
+package fr.eloane.javamas.kernel.transport;
 
-import java.util.function.Consumer;
+import java.io.IOException;
+import java.net.DatagramSocket;
+import java.net.InetSocketAddress;
 
 /**
- * Observe the values published by an agent
+ * Exchanges messages with one other node using UDP
  *
  * @author Guillaume Monet
  */
-@FunctionalInterface
-public interface Probe {
+public final class UdpTransport extends DatagramTransport {
+
+    private final InetSocketAddress bind;
 
     /**
      *
-     * @param value value published by the agent
+     * @param bind local address and port receiving the messages
+     * @param destination address and port of the other node
      */
-    void handleProbe(ProbeValue value);
+    public UdpTransport(InetSocketAddress bind, InetSocketAddress destination) {
+        this(bind, destination, new JavaSerializationCodec());
+    }
 
     /**
      *
-     * @param <T> type of the values
-     * @param name name of the values to observe
-     * @param type type of the values to observe
-     * @param handler called with each value of this name and type
-     * @return a probe observing only the values with this name and type
+     * @param bind local address and port receiving the messages
+     * @param destination address and port of the other node
+     * @param codec
      */
-    static <T> Probe of(String name, Class<T> type, Consumer<? super T> handler) {
-        return value -> {
-            if (value.name().equals(name) && type.isInstance(value.value())) {
-                handler.accept(type.cast(value.value()));
-            }
-        };
+    public UdpTransport(InetSocketAddress bind, InetSocketAddress destination, MessageCodec codec) {
+        super(destination, codec);
+        this.bind = bind;
+    }
+
+    @Override
+    protected DatagramSocket createSocket() throws IOException {
+        return new DatagramSocket(bind);
     }
 }

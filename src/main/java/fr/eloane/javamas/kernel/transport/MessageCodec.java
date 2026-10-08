@@ -21,37 +21,33 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-package fr.eloane.javamas.kernel.probes;
+package fr.eloane.javamas.kernel.transport;
 
-import java.util.function.Consumer;
+import fr.eloane.javamas.kernel.messages.Message;
+import java.io.IOException;
 
 /**
- * Observe the values published by an agent
+ * Converts messages to bytes and back for the transports
  *
  * @author Guillaume Monet
  */
-@FunctionalInterface
-public interface Probe {
+public interface MessageCodec {
 
     /**
      *
-     * @param value value published by the agent
+     * @param message
+     * @return the encoded message
+     * @throws IOException if the message can't be encoded
      */
-    void handleProbe(ProbeValue value);
+    byte[] encode(Message<?> message) throws IOException;
 
     /**
      *
-     * @param <T> type of the values
-     * @param name name of the values to observe
-     * @param type type of the values to observe
-     * @param handler called with each value of this name and type
-     * @return a probe observing only the values with this name and type
+     * @param data
+     * @param offset
+     * @param length
+     * @return the decoded message
+     * @throws IOException if the data is not a valid message
      */
-    static <T> Probe of(String name, Class<T> type, Consumer<? super T> handler) {
-        return value -> {
-            if (value.name().equals(name) && type.isInstance(value.value())) {
-                handler.accept(type.cast(value.value()));
-            }
-        };
-    }
+    Message<?> decode(byte[] data, int offset, int length) throws IOException;
 }

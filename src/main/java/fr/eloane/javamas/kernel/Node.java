@@ -1,4 +1,4 @@
-/*
+/* 
  * The MIT License
  *
  * Copyright 2018 Guillaume Monet.
@@ -24,200 +24,220 @@
 package fr.eloane.javamas.kernel;
 
 import fr.eloane.javamas.kernel.messages.Message;
+import fr.eloane.javamas.kernel.organization.Target;
 import fr.eloane.javamas.kernel.transport.Transport;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Observable;
-import java.util.Observer;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
- * Local node : registry of the agents of the JVM, routes messages to local
- * agents and to the other nodes through the transports.
+ * A node hosts agents : it delivers the messages to its agents and exchanges
+ * messages with the other nodes through its transports.<br />
+ * Messages received from a transport are forwarded to the other transports
+ * (and to the other peers of point to point transports) while their time to
+ * live allows it. Each message is delivered only once to an agent.<br />
+ * Agents use the {@link #getDefault() default node} unless another node is
+ * given; several nodes can live in the same JVM.
  *
  * @author Guillaume Monet
  */
-@SuppressWarnings("deprecation")
-public final class Node implements Observer {
+public final class Node implements AutoCloseable {
 
     private static final System.Logger LOGGER = System.getLogger(Node.class.getName());
 
     /**
      * Number of message ids remembered to avoid delivering a message twice
      */
-    private static final int MAX_SEEN_MESSAGES = 10000;
+    private static final int MAX_SEEN_MESSAGES = 10_000;
 
-    private static Node comm = null;
-    private final Map<String, Agent<?>> agents = new ConcurrentHashMap<>();
+    private static Node defaultNode = null;
+
+    private final String name;
+    private final Map<String, Agent> agents = new ConcurrentHashMap<>();
     private final List<Transport> transports = new CopyOnWriteArrayList<>();
-    private final Set<String> seenMessageIds = Collections.synchronizedSet(Collections.newSetFromMap(new LinkedHashMap<String, Boolean>() {
+    private final Set<String> seen = Collections.synchronizedSet(Collections.newSetFromMap(new LinkedHashMap<>() {
         @Override
         protected boolean removeEldestEntry(Map.Entry<String, Boolean> eldest) {
             return size() > MAX_SEEN_MESSAGES;
         }
     }));
+    private volatile boolean closed = false;
 
-    private Node() {
+    public Node() {
+        this("node");
     }
 
     /**
      *
-     * @return the node of the JVM, created if needed
+     * @param name name of the node, for the logs
      */
-    public static synchronized Node getHandle() {
-        if (comm == null) {
-            comm = new Node();
+    public Node(String name) {
+        this.name = name;
+    }
+
+    /**
+     *
+     * @return the default node of the JVM, created if needed
+     */
+    public static synchronized Node getDefault() {
+        if (defaultNode == null || defaultNode.closed) {
+            defaultNode = new Node("default");
         }
-        return comm;
+        return defaultNode;
     }
 
-    /**
-     * Add and start a transport to exchange messages with other nodes
-     *
-     * @param t
-     */
-    public void addTransport(Transport t) {
-        transports.add(t);
-        t.addObserver(this);
-        t.start();
-    }
-
-    /**
-     *
-     * @param t
-     */
-    public void removeTransport(Transport t) {
-        t.deleteObserver(this);
-        transports.remove(t);
-    }
-
-    /**
-     *
-     * @param agt
-     */
-    public void register(Agent<?> agt) {
-        agents.put(agt.getAddress().getId(), agt);
-    }
-
-    /**
-     * Unregister an agent, the node is stopped when there is no more agent
-     *
-     * @param agt
-     */
-    public synchronized void unregister(Agent<?> agt) {
-        agents.remove(agt.getAddress().getId());
-        if (agents.isEmpty()) {
-            stop();
-            synchronized (Node.class) {
-                if (Node.comm == this) {
-                    Node.comm = null;
-                }
-            }
-            LOGGER.log(System.Logger.Level.DEBUG, "Node killed");
+    // ---------------------------------------------------------------- agents
+    void register(Agent agent) {
+        if (closed) {
+            throw new IllegalStateException(this + " is closed");
         }
+        agents.put(agent.getAddress().id(), agent);
     }
 
-    /**
-     *
-     */
-    public void pauseAll() {
-        agents.values().forEach(Agent::pause);
-    }
-
-    /**
-     *
-     */
-    public void resumeAll() {
-        agents.values().forEach(Agent::resume);
-    }
-
-    /**
-     *
-     */
-    public void stopAll() {
-        agents.values().forEach(Agent::stop);
-    }
-
-    /**
-     *
-     * @param delay
-     */
-    public void setDelayAll(int delay) {
-        agents.values().forEach(a -> a.setDelay(delay));
+    void unregister(Agent agent) {
+        agents.remove(agent.getAddress().id());
     }
 
     /**
      *
      * @param id
-     * @return the agent or null if no agent has this id on the node
+     * @return the agent with this id or null
      */
-    public Agent<?> getAgent(String id) {
+    public Agent getAgent(String id) {
         return agents.get(id);
     }
 
-    /**
-     *
-     * @return the agents registered on the node
-     */
-    public Collection<Agent<?>> getAgents() {
+    public Collection<Agent> getAgents() {
         return Collections.unmodifiableCollection(agents.values());
     }
 
+    public void pauseAll() {
+        agents.values().forEach(Agent::pause);
+    }
+
+    public void resumeAll() {
+        agents.values().forEach(Agent::resume);
+    }
+
+    public void stopAll() {
+        agents.values().forEach(Agent::stop);
+    }
+
+    public void setDelayAll(Duration delay) {
+        agents.values().forEach(a -> a.setDelay(delay));
+    }
+
+    // ------------------------------------------------------------ transports
     /**
-     * Deliver a message to the local agents (receivers and members of the
-     * organizations) and broadcast it to the other nodes
+     * Add and start a transport
      *
-     * @param mes
+     * @param transport
+     * @throws java.io.UncheckedIOException if the transport can't be opened
      */
-    public void sendMessage(Message<?> mes) {
-        // Remember our own messages so they are not delivered again when a
-        // transport loops them back (multicast loopback, relay by other nodes)
-        this.seenMessageIds.add(mes.getId());
-        mes.getReceivers().forEach(id -> {
-            Agent<?> agent = agents.get(id);
-            if (agent != null) {
-                agent.pushMessage(mes);
+    public void addTransport(Transport transport) {
+        transports.add(transport);
+        try {
+            transport.start(this::received);
+        } catch (RuntimeException e) {
+            transports.remove(transport);
+            throw e;
+        }
+    }
+
+    /**
+     * Remove and close a transport
+     *
+     * @param transport
+     */
+    public void removeTransport(Transport transport) {
+        transports.remove(transport);
+        transport.close();
+    }
+
+    public List<Transport> getTransports() {
+        return Collections.unmodifiableList(transports);
+    }
+
+    // -------------------------------------------------------------- messages
+    /**
+     * Deliver a message to the local agents and send it to the other nodes
+     *
+     * @param message
+     */
+    public void send(Message<?> message) {
+        seen.add(message.getId());
+        deliver(message);
+        for (Transport t : transports) {
+            t.send(message);
+        }
+    }
+
+    private void received(Message<?> message, Transport from) {
+        if (!seen.add(message.getId())) {
+            return;
+        }
+        deliver(message);
+        if (message.getTtl() > 1) {
+            Message<?> relay = message.copy().ttl(message.getTtl() - 1);
+            for (Transport t : transports) {
+                if (t != from || from.forwardsBetweenPeers()) {
+                    t.send(relay);
+                }
             }
-        });
-        mes.getOrganizations().forEach(organisation
-                -> agents.values().stream()
-                        .filter(agent -> agent.isInOrganization(organisation) && !agent.getAddress().getId().equals(mes.getSender()))
-                        .forEach(agent -> agent.pushMessage(mes)));
-        this.broadcastMessage(mes);
-    }
-
-    private void broadcastMessage(Message<?> mes) {
-        transports.forEach(t -> t.sendMessage(mes));
+        }
     }
 
     /**
-     * Nothing to do, the node is started on creation
+     * Deliver a copy of the message to its receivers and to the agents of its
+     * targets (except the sender)
      */
-    public void start() {
+    private void deliver(Message<?> message) {
+        if (message.isExpired(Instant.now())) {
+            LOGGER.log(System.Logger.Level.DEBUG, () -> "Expired message dropped " + message.getId());
+            return;
+        }
+        Set<Agent> recipients = new LinkedHashSet<>();
+        for (String id : message.getReceivers()) {
+            Agent agent = agents.get(id);
+            if (agent != null) {
+                recipients.add(agent);
+            }
+        }
+        for (Target target : message.getTargets()) {
+            for (Agent agent : agents.values()) {
+                if (!agent.getAddress().id().equals(message.getSender()) && agent.getOrganization().matches(target)) {
+                    recipients.add(agent);
+                }
+            }
+        }
+        recipients.forEach(agent -> agent.deliver(message.copy()));
     }
 
     /**
-     * Close all the transports
-     */
-    public void stop() {
-        transports.forEach(Transport::close);
-    }
-
-    /**
-     * Message received by a transport
-     *
-     * @param o the transport
-     * @param arg the message
+     * Stop all the agents and close the transports
      */
     @Override
-    public void update(Observable o, Object arg) {
-        if (arg instanceof Message<?> mes && this.seenMessageIds.add(mes.getId())) {
-            this.sendMessage(mes);
-        }
+    public void close() {
+        closed = true;
+        stopAll();
+        transports.forEach(Transport::close);
+        transports.clear();
+    }
+
+    public boolean isClosed() {
+        return closed;
+    }
+
+    @Override
+    public String toString() {
+        return "Node[" + name + "]";
     }
 }

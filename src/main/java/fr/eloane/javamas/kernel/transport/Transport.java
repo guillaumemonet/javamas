@@ -1,4 +1,4 @@
-/*
+/* 
  * The MIT License
  *
  * Copyright 2018 Guillaume Monet.
@@ -24,140 +24,144 @@
 package fr.eloane.javamas.kernel.transport;
 
 import fr.eloane.javamas.kernel.messages.Message;
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.InvalidClassException;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
-import java.io.UncheckedIOException;
-import java.net.SocketException;
-import java.util.HashMap;
-import java.util.Observable;
+import java.util.Objects;
 
 /**
- * Exchange messages with the other nodes.<br />
- * A transport runs a thread waiting for messages and notifies its observers
- * for each message received.
+ * Exchanges messages with other nodes.<br />
+ * A transport is started by the node it is added to, receives messages in
+ * its own threads and gives them to the node.
  *
  * @author Guillaume Monet
  */
-@SuppressWarnings("deprecation")
-public abstract class Transport extends Observable implements Runnable {
+public abstract class Transport implements AutoCloseable {
 
     private static final System.Logger LOGGER = System.getLogger(Transport.class.getName());
 
-    private volatile boolean stop = false;
-    protected HashMap<String, String> parameters;
+    protected final MessageCodec codec;
+    private volatile MessageListener listener;
+    private volatile boolean closed = false;
 
     /**
      *
-     * @param parameters configuration of the transport
+     * @param codec converts messages to bytes and back
      */
-    public Transport(HashMap<String, String> parameters) {
-        this.parameters = parameters;
+    protected Transport(MessageCodec codec) {
+        this.codec = Objects.requireNonNull(codec);
     }
 
     /**
-     * Start to wait for messages in a daemon thread
-     */
-    public final void start() {
-        Thread.ofPlatform().name(getClass().getSimpleName()).daemon().start(this);
-    }
-
-    /**
-     * Send a message to the other nodes
+     * Start receiving messages
      *
-     * @param mess
+     * @param listener receives the messages
+     * @throws IllegalStateException if the transport is already started or
+     * closed
+     * @throws java.io.UncheckedIOException if the transport can't be opened
      */
-    public abstract void sendMessage(Message<?> mess);
-
-    /**
-     * Stop waiting for messages and release the resources
-     */
-    public void close() {
-        stop = true;
-        kill();
+    public final synchronized void start(MessageListener listener) {
+        if (this.listener != null || closed) {
+            throw new IllegalStateException("Transport already started or closed");
+        }
+        this.listener = Objects.requireNonNull(listener);
+        open();
     }
 
     /**
+     * Open the sockets and start the receiving threads
      *
-     * @return if the transport is closed
+     * @throws java.io.UncheckedIOException if the transport can't be opened
      */
-    public final boolean isClosed() {
-        return stop;
+    protected abstract void open();
+
+    /**
+     * Send a message to the other nodes. Errors are logged, a message can be
+     * lost.
+     *
+     * @param message
+     */
+    public abstract void send(Message<?> message);
+
+    /**
+     *
+     * @return true if a message received from a peer must be forwarded to the
+     * other peers of this transport (point to point links), false if all the
+     * peers already received it (broadcast medium)
+     */
+    public boolean forwardsBetweenPeers() {
+        return false;
+    }
+
+    /**
+     * Stop receiving and release the resources
+     */
+    @Override
+    public final void close() {
+        synchronized (this) {
+            if (closed) {
+                return;
+            }
+            closed = true;
+        }
+        release();
     }
 
     /**
      * Release the resources of the transport
      */
-    public abstract void kill();
+    protected abstract void release();
 
-    @Override
-    public final void run() {
-        while (!stop) {
-            try {
-                Message<?> message = waitMessage();
-                if (message != null) {
-                    this.setChanged();
-                    this.notifyObservers(message);
-                }
-            } catch (UncheckedIOException e) {
-                if (!stop && e.getCause() instanceof SocketException) {
-                    LOGGER.log(System.Logger.Level.ERROR, getClass().getSimpleName() + " socket closed", e);
-                    stop = true;
-                } else if (!stop) {
-                    LOGGER.log(System.Logger.Level.WARNING, "Invalid message received on " + getClass().getSimpleName(), e);
-                }
-            } catch (ClassCastException e) {
-                if (!stop) {
-                    LOGGER.log(System.Logger.Level.WARNING, "Invalid message received on " + getClass().getSimpleName(), e);
-                }
-            }
-        }
+    public final boolean isClosed() {
+        return closed;
     }
 
     /**
-     * Block until a message is received
-     *
-     * @return the message received or null
-     * @throws UncheckedIOException if the message can't be read
-     */
-    public abstract Message<?> waitMessage();
-
-    /**
-     *
-     * @param mess
-     * @return the serialized message
-     */
-    protected static byte[] serialize(Message<?> mess) {
-        ByteArrayOutputStream bout = new ByteArrayOutputStream();
-        try (ObjectOutputStream out = new ObjectOutputStream(bout)) {
-            out.writeObject(mess);
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
-        return bout.toByteArray();
-    }
-
-    /**
-     * Deserialize a message received from the network, only allowed classes
-     * are accepted
+     * To call by the implementations when data is received
      *
      * @param data
+     * @param offset
      * @param length
-     * @return the message
-     * @throws UncheckedIOException if the message can't be read or contains a
-     * class not allowed
-     * @see SecureObjectInputStream
      */
-    protected static Message<?> deserialize(byte[] data, int length) {
-        try (ObjectInputStream in = new SecureObjectInputStream(new ByteArrayInputStream(data, 0, length))) {
-            return (Message<?>) in.readObject();
+    protected final void received(byte[] data, int offset, int length) {
+        Message<?> message;
+        try {
+            message = codec.decode(data, offset, length);
         } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        } catch (ClassNotFoundException e) {
-            throw new UncheckedIOException(new InvalidClassException(e.getMessage()));
+            LOGGER.log(System.Logger.Level.WARNING, "Invalid message dropped by " + this + " : " + e);
+            return;
         }
+        MessageListener l = listener;
+        if (l != null && !closed) {
+            l.messageReceived(message, this);
+        }
+    }
+
+    /**
+     *
+     * @param message
+     * @return the encoded message or null if it can't be encoded (logged)
+     */
+    protected final byte[] encode(Message<?> message) {
+        try {
+            return codec.encode(message);
+        } catch (IOException e) {
+            LOGGER.log(System.Logger.Level.WARNING, "Can't encode message " + message.getId() + " : " + e);
+            return null;
+        }
+    }
+
+    /**
+     * Start a daemon thread
+     *
+     * @param name
+     * @param task
+     * @return the thread
+     */
+    protected static Thread startThread(String name, Runnable task) {
+        return Thread.ofPlatform().name("javamas-" + name).daemon().start(task);
+    }
+
+    @Override
+    public String toString() {
+        return getClass().getSimpleName();
     }
 }

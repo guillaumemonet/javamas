@@ -1,5 +1,6 @@
 package fr.eloane.javamas.kernel;
 
+import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -32,14 +33,27 @@ class SchedulerTest {
     @Test
     void timedPauseAndDelay() {
         Scheduler scheduler = new Scheduler();
-        scheduler.pause(100);
+        scheduler.pause(Duration.ofMillis(100));
         long start = System.nanoTime();
         assertTrue(scheduler.nextStep());
         assertTrue(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start) >= 90);
 
-        scheduler.setDelay(100);
+        scheduler.setDelay(Duration.ofMillis(100));
         start = System.nanoTime();
         assertTrue(scheduler.nextStep());
         assertTrue(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start) >= 90);
+    }
+
+    @Test
+    void pauseDuringDelayIsHonored() throws Exception {
+        Scheduler scheduler = new Scheduler();
+        scheduler.setDelay(Duration.ofMillis(200));
+        CompletableFuture<Boolean> step = CompletableFuture.supplyAsync(scheduler::nextStep);
+        Thread.sleep(50);
+        scheduler.pause();
+        Thread.sleep(300);
+        assertFalse(step.isDone(), "paused during the delay");
+        scheduler.resume();
+        assertTrue(step.get(1, TimeUnit.SECONDS));
     }
 }

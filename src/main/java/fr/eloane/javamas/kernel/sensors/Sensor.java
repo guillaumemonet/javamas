@@ -1,4 +1,4 @@
-/*
+/* 
  * The MIT License
  *
  * Copyright 2018 Guillaume Monet.
@@ -23,85 +23,80 @@
  */
 package fr.eloane.javamas.kernel.sensors;
 
-import java.io.Serial;
-import java.io.Serializable;
-import java.util.Observable;
+import java.util.List;
+import java.util.Locale;
+import java.util.Objects;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
- * Perception of the environment : notifies its observers each time its value
- * changes
+ * Perception of the environment : notifies its listeners each time its value
+ * changes.<br />
+ * A sensor added to an agent calls the agent's handleSensor method.
  *
  * @param <T> type of the value
  * @author Guillaume Monet
  */
-@SuppressWarnings("deprecation")
-public class Sensor<T> extends Observable implements Serializable {
+public class Sensor<T> {
 
-    public static final int SPEED = 1;
-    public static final int PRESSURE = 2;
-    public static final int THERMAL = 3;
-    public static final int BRIGHTNESS = 4;
-    public static final int CONTACT = 5;
-
-    @Serial
-    private static final long serialVersionUID = -5754532731305532805L;
-
-    private final int type;
+    private final List<SensorListener> listeners = new CopyOnWriteArrayList<>();
+    private final SensorType type;
+    private final String name;
     private volatile T value;
-
-    /**
-     *
-     * @param type one of the type constants, see also {@link SensorType}
-     */
-    public Sensor(int type) {
-        this.type = type;
-    }
 
     /**
      *
      * @param type
      */
     public Sensor(SensorType type) {
-        this(type.getCode());
+        this(type, type.name().toLowerCase(Locale.ROOT));
     }
 
     /**
      *
-     * @return the type constant
+     * @param type
+     * @param name name of the sensor, to tell apart sensors of the same type
      */
-    public int getType() {
+    public Sensor(SensorType type, String name) {
+        this.type = Objects.requireNonNull(type);
+        this.name = Objects.requireNonNull(name);
+    }
+
+    public SensorType getType() {
         return type;
     }
 
-    /**
-     *
-     * @return the type, {@link SensorType#OTHER} for custom types
-     */
-    public SensorType getSensorType() {
-        return SensorType.fromCode(type);
+    public String getName() {
+        return name;
     }
 
     /**
      *
-     * @return the current value
+     * @return the current value, null until the first value is set
      */
     public T getValue() {
         return value;
     }
 
     /**
-     * Change the value and notify the observers
+     * Change the value and notify the listeners
      *
      * @param value
      */
     public void setValue(T value) {
         this.value = value;
-        this.setChanged();
-        this.notifyObservers();
+        listeners.forEach(l -> l.sensorChanged(this));
+    }
+
+    public void addListener(SensorListener listener) {
+        listeners.add(listener);
+    }
+
+    public void removeListener(SensorListener listener) {
+        listeners.remove(listener);
     }
 
     @Override
     public String toString() {
-        return String.valueOf(this.value);
+        return name + "=" + value;
     }
 }

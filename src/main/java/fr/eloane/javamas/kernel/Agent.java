@@ -1,4 +1,4 @@
-/*
+/* 
  * The MIT License
  *
  * Copyright 2018 Guillaume Monet.
@@ -25,373 +25,456 @@ package fr.eloane.javamas.kernel;
 
 import fr.eloane.javamas.kernel.messages.Message;
 import fr.eloane.javamas.kernel.organization.Organization;
-import fr.eloane.javamas.kernel.probes.ProbesManager;
-import fr.eloane.javamas.kernel.sensors.SensorsManager;
-import java.io.Serial;
-import java.io.Serializable;
+import fr.eloane.javamas.kernel.probes.Probe;
+import fr.eloane.javamas.kernel.probes.ProbeValue;
+import fr.eloane.javamas.kernel.sensors.Sensor;
+import fr.eloane.javamas.kernel.sensors.SensorListener;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.Collections;
+import java.util.List;
+import java.util.Objects;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.PriorityBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
+ * An agent : it lives in its own thread, communicates with messages, perceives
+ * its environment with sensors, is part of an organization (communities,
+ * groups, roles) and can be observed with probes.<br />
+ * Life cycle : {@link #init()}, {@link #activate()}, {@link #live()},
+ * {@link #end()} then the agent is killed. Only {@link #live()} must be
+ * implemented.
  *
  * @author Guillaume Monet
- * @param <T> type of the values stored in the agent's database
  */
-public abstract class Agent<T> extends AbstractAgent implements Serializable {
+public abstract class Agent implements Runnable {
 
-    @Serial
-    private static final long serialVersionUID = -3591756155645176746L;
-
-    /**
-     * Description of the probe value published when the messages queue changes
-     */
-    public static final String MESSAGES_QUEUE_PROBE = "MESSAGES QUEUE";
+    private static final System.Logger LOGGER = System.getLogger(Agent.class.getName());
 
     /**
-     * Message waiting in the queue, ordered by priority then by arrival
+     * Message waiting in the mailbox, ordered by priority then by arrival
      */
-    private record QueuedMessage(Message<?> message, long sequence) implements Comparable<QueuedMessage>, Serializable {
+    private record Queued(Message<?> message, long sequence) implements Comparable<Queued> {
 
         @Override
-        public int compareTo(QueuedMessage other) {
-            int priority = Integer.compare(other.message.getPriority(), this.message.getPriority());
+        public int compareTo(Queued other) {
+            int priority = other.message.getPriority().compareTo(this.message.getPriority());
             return priority != 0 ? priority : Long.compare(this.sequence, other.sequence);
         }
     }
 
-    private final Address address;
-    private final SensorsManager sensorsManager = new SensorsManager(this);
-    private final ProbesManager probesManager = new ProbesManager(this);
-    private final PriorityBlockingQueue<QueuedMessage> messages = new PriorityBlockingQueue<>();
-    private final AtomicLong messageSequence = new AtomicLong();
+    private final Node node;
+    private final Address address = Address.generate();
+    private final String name;
     private final Organization organization = new Organization();
     private final Scheduler scheduler = new Scheduler();
-    private Database<T> database = null;
-    private String name = "";
+    private final PriorityBlockingQueue<Queued> mailbox = new PriorityBlockingQueue<>();
+    private final AtomicLong arrivals = new AtomicLong();
+    private final List<Sensor<?>> sensors = new CopyOnWriteArrayList<>();
+    private final SensorListener sensorListener = this::handleSensor;
+    private final List<Probe> probes = new CopyOnWriteArrayList<>();
+    private final AtomicReference<AgentState> state = new AtomicReference<>(AgentState.CREATED);
+    private volatile Thread thread;
 
     /**
-     * Create new Agent
+     * Agent of the default node, named after its class
      */
-    @SuppressWarnings("this-escape")
-    public Agent() {
-        this.address = Address.generate();
-        this.register();
+    protected Agent() {
+        this(null, Node.getDefault());
     }
 
     /**
-     * Create new Agent
+     * Agent of the default node
      *
-     * @param name set the current public name for the agent
+     * @param name public name of the agent
      */
-    public Agent(String name) {
-        this();
-        this.name = name;
+    protected Agent(String name) {
+        this(name, Node.getDefault());
     }
 
     /**
-     * Create new Agent
      *
-     * @param daemon set if the agent is a daemon
+     * @param name public name of the agent, null for the class name
+     * @param node the node of the agent
      */
-    public Agent(boolean daemon) {
-        this();
-        this.daemon = daemon;
+    protected Agent(String name, Node node) {
+        this.name = name == null ? getClass().getSimpleName() : name;
+        this.node = Objects.requireNonNull(node);
+        node.register(this);
+    }
+
+    // ------------------------------------------------------------ life cycle
+    /**
+     * First step of the life cycle
+     */
+    protected void init() {
     }
 
     /**
-     * Create new Agent
+     * Activation : join the organization, add sensors...
+     */
+    protected void activate() {
+    }
+
+    /**
+     * Life of the agent, usually a loop on {@link #nextStep()} or
+     * {@link #receive()}
+     */
+    protected abstract void live();
+
+    /**
+     * End of life, the agent can still send messages
+     */
+    protected void end() {
+    }
+
+    /**
+     * Start the life cycle in a new platform thread
      *
-     * @param name set the current public name for the agent
-     * @param daemon set if the agent is a daemon
+     * @return the thread running the agent
      */
-    public Agent(String name, boolean daemon) {
-        this();
-        this.name = name;
-        this.daemon = daemon;
+    public final Thread start() {
+        return start(Thread.ofPlatform());
     }
 
     /**
-     * Register the Agent to the current AgentNode
+     * Start the life cycle in a new virtual thread.<br />
+     * Virtual threads allow a huge number of agents but don't keep the JVM
+     * alive.
+     *
+     * @return the thread running the agent
      */
-    private void register() {
-        Node.getHandle().register(this);
+    public final Thread startVirtual() {
+        return start(Thread.ofVirtual());
     }
 
     /**
-     * Unregister the Agent from the current AgentNode
+     * Start the life cycle in a thread created by the builder
+     *
+     * @param builder e.g. Thread.ofPlatform().daemon()
+     * @return the thread running the agent
+     * @throws IllegalStateException if the agent was already started
      */
-    private void unregister() {
-        Node.getHandle().unregister(this);
+    public final Thread start(Thread.Builder builder) {
+        if (state.get() != AgentState.CREATED || thread != null) {
+            throw new IllegalStateException(this + " already started");
+        }
+        Thread t = builder.name(name).unstarted(this);
+        thread = t;
+        t.start();
+        return t;
     }
 
     /**
-     * Kill de agent
+     * Run the whole life cycle in the current thread
+     *
+     * @throws IllegalStateException if the agent was already started
      */
     @Override
-    protected void kill() {
-        this.unregister();
-        this.flushMessage();
-        this.probesManager.flushProbes();
-        this.sensorsManager.flushSensors();
-        this.scheduler.stop();
-    }
-
-    @Override
-    protected String threadName() {
-        return (name.isEmpty() ? getClass().getSimpleName() : name) + "-" + address;
-    }
-
-    /**
-     * Pause the current Agent's life cycle
-     *
-     * @see #nextStep()
-     * @see #stop()
-     * @see #resume()
-     * @see #pause(long)
-     */
-    public final void pause() {
-        this.scheduler.pause();
-    }
-
-    /**
-     * Pause the current Agent's life cycle during time
-     *
-     * @see #nextStep()
-     * @see #stop()
-     * @see #resume()
-     * @see #pause()
-     * @param time pause duration in milliseconds
-     */
-    public final void pause(long time) {
-        this.scheduler.pause(time);
-    }
-
-    /**
-     * Resume the current Agent's life cycle
-     *
-     * @see #stop()
-     * @see #nextStep()
-     * @see #pause()
-     * @see #pause(long)
-     */
-    public final void resume() {
-        this.scheduler.resume();
-    }
-
-    /**
-     * Stop the current Agent's life cycle
-     *
-     * @see #nextStep()
-     * @see #pause()
-     * @see #pause(long)
-     * @see #resume()
-     */
-    public final void stop() {
-        this.scheduler.stop();
-    }
-
-    /**
-     * Set the current delay beetween each Agent's life cycle
-     *
-     * @see #nextStep()
-     * @see #pause()
-     * @see #pause(long)
-     * @see #stop()
-     * @see #resume()
-     * @param delay delay in milliseconds
-     */
-    public final void setDelay(int delay) {
-        this.scheduler.setDelay(delay);
-    }
-
-    /**
-     * Wait, Stop , Continue the Agent's life cycle<br />
-     * Must be use in live() method
-     *
-     * @see #setDelay(int)
-     * @see #pause()
-     * @see #stop()
-     * @see #resume()
-     * @see #live()
-     * @return if life cycle can proceed
-     */
-    public final boolean nextStep() {
-        return this.scheduler.nextStep();
-    }
-
-    /**
-     * launch an other agent synchroneous
-     *
-     * @param agt an agent from AgentLibrary
-     */
-    public final void launchAgent(Agent<?> agt) {
-        launchAgent(agt, false);
-    }
-
-    /**
-     * launch an other agent
-     *
-     * @param agt the Agent to launch
-     * @param async if it's asynchroneous or not
-     */
-    public final void launchAgent(Agent<?> agt, boolean async) {
-        if (async) {
-            agt.start();
-        } else {
-            agt.run();
+    public final void run() {
+        if (!setState(AgentState.CREATED, AgentState.ACTIVATING)) {
+            throw new IllegalStateException(this + " already started");
+        }
+        if (thread == null) {
+            thread = Thread.currentThread();
+        }
+        try {
+            init();
+            activate();
+            if (setState(AgentState.ACTIVATING, AgentState.LIVING)) {
+                live();
+            }
+            if (setState(AgentState.LIVING, AgentState.ENDING)) {
+                end();
+            }
+        } catch (RuntimeException e) {
+            LOGGER.log(System.Logger.Level.ERROR, this + " failed", e);
+        } finally {
+            kill();
         }
     }
 
     /**
-     * Send message to one agent
-     *
-     * @param mess
+     * Kill the agent now : stop its life cycle, unregister it from its node
+     * and release its sensors, probes and messages. Called at the end of the
+     * life cycle.
      */
-    public final void sendMessage(Message<?> mess) {
-        Message<?> m = mess.clone();
-        m.setSender(this.address.getId());
-        Node.getHandle().sendMessage(m);
+    public final void kill() {
+        if (state.getAndSet(AgentState.DEAD) == AgentState.DEAD) {
+            return;
+        }
+        publish(ProbeValue.STATE, AgentState.DEAD);
+        stop();
+        node.unregister(this);
+        mailbox.clear();
+        sensors.forEach(s -> s.removeListener(sensorListener));
+        sensors.clear();
+        probes.clear();
+    }
+
+    private boolean setState(AgentState expected, AgentState next) {
+        if (state.compareAndSet(expected, next)) {
+            publish(ProbeValue.STATE, next);
+            return true;
+        }
+        return false;
+    }
+
+    public final AgentState getState() {
+        return state.get();
+    }
+
+    // ------------------------------------------------------------- scheduling
+    /**
+     * Wait for the next step of the life cycle (delay, pause), to use in
+     * {@link #live()}
+     *
+     * @return false when the agent is stopped
+     */
+    protected final boolean nextStep() {
+        boolean running = scheduler.nextStep();
+        if (!running) {
+            // Clear the interruption used by stop() to wake the agent up
+            Thread.interrupted();
+        }
+        return running;
     }
 
     /**
-     * wait until receive a message
-     *
-     * @return a message or null if the agent's thread is interrupted
+     * Pause until {@link #resume()}
      */
-    public final Message<?> waitNextMessage() {
-        return this.waitNextMessage(0);
+    public final void pause() {
+        scheduler.pause();
     }
 
     /**
-     * wait until receive a message or until time
+     * Pause during a time
      *
-     * @param until time to wait in milliseconds, 0 to wait forever
-     * @return a message or null if no message was received in time
+     * @param duration
      */
-    public final Message<?> waitNextMessage(int until) {
+    public final void pause(Duration duration) {
+        scheduler.pause(duration);
+    }
+
+    public final void resume() {
+        scheduler.resume();
+    }
+
+    /**
+     * Stop the life cycle : {@link #nextStep()} returns false and a blocked
+     * {@link #receive()} returns null (the agent's thread is interrupted).
+     */
+    public final void stop() {
+        scheduler.stop();
+        Thread t = thread;
+        if (t != null && t != Thread.currentThread()) {
+            t.interrupt();
+        }
+    }
+
+    /**
+     *
+     * @return false if the agent is stopped
+     */
+    public final boolean isRunning() {
+        return scheduler.isRunning();
+    }
+
+    /**
+     *
+     * @param delay delay between each step
+     */
+    public final void setDelay(Duration delay) {
+        scheduler.setDelay(delay);
+    }
+
+    // -------------------------------------------------------------- messages
+    /**
+     * Send a message : the sender is set on a copy of the message
+     *
+     * @param message
+     */
+    public final void send(Message<?> message) {
+        node.send(message.copy().sender(address.id()));
+    }
+
+    /**
+     * Wait for a message
+     *
+     * @return the message with the highest priority, or null if the agent is
+     * stopped
+     */
+    protected final Message<?> receive() {
+        return receive(null);
+    }
+
+    /**
+     * Wait for a message during a time
+     *
+     * @param timeout null to wait without limit
+     * @return the message with the highest priority, or null if no message
+     * was received in time or the agent is stopped
+     */
+    protected final Message<?> receive(Duration timeout) {
+        long deadline = timeout == null ? 0 : System.nanoTime() + timeout.toNanos();
         try {
-            QueuedMessage queued = until <= 0 ? messages.take() : messages.poll(until, TimeUnit.MILLISECONDS);
-            this.notifyMessagesChanged();
-            return queued == null ? null : queued.message();
+            while (true) {
+                Queued queued;
+                if (!scheduler.isRunning()) {
+                    queued = mailbox.poll();
+                } else if (timeout == null) {
+                    queued = mailbox.take();
+                } else {
+                    queued = mailbox.poll(deadline - System.nanoTime(), TimeUnit.NANOSECONDS);
+                }
+                if (queued == null) {
+                    return null;
+                }
+                mailboxChanged();
+                if (!queued.message().isExpired(Instant.now())) {
+                    return queued.message();
+                }
+            }
         } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
+            if (scheduler.isRunning()) {
+                Thread.currentThread().interrupt();
+            }
             return null;
         }
     }
 
     /**
-     * Add message to inner queue
+     * Put a message in the mailbox, called by the node
      *
-     * @param mes
+     * @param message
      */
-    public final void pushMessage(Message<?> mes) {
-        messages.put(new QueuedMessage(mes, messageSequence.getAndIncrement()));
-        this.notifyMessagesChanged();
-    }
-
-    /**
-     * Remove all messages from queue
-     */
-    public final void flushMessage() {
-        messages.clear();
-        this.notifyMessagesChanged();
-    }
-
-    private void notifyMessagesChanged() {
-        this.probe(MESSAGES_QUEUE_PROBE, this.countMessages());
-    }
-
-    /**
-     * Publish a value to all the probes of the agent
-     *
-     * @param description description of the value
-     * @param value the value
-     */
-    protected final void probe(String description, Object value) {
-        this.setChanged();
-        this.notifyObservers(new AgentProbeValue<>(description, value));
-    }
-
-    /**
-     * Return the messages queue's size
-     *
-     * @return messages queue's size
-     */
-    public final int countMessages() {
-        return messages.size();
-    }
-
-    /**
-     * The agent's persistent database, stored in the user's home and named
-     * after the agent's name (or class name if no name is set).
-     *
-     * @return the database, created and loaded on first call
-     */
-    public synchronized Database<T> getDatabase() {
-        if (this.database == null) {
-            this.database = new Database<>(name.isEmpty() ? getClass().getName() : name, true);
+    final void deliver(Message<?> message) {
+        if (state.get() == AgentState.DEAD) {
+            return;
         }
-        return this.database;
+        mailbox.put(new Queued(message, arrivals.getAndIncrement()));
+        mailboxChanged();
     }
 
     /**
-     * print something in current output
      *
-     * @param str something to print
+     * @return the number of messages waiting in the mailbox
      */
-    public final void println(Object str) {
-        System.out.println(this.name + this.address + ":" + str);
+    public final int pendingMessages() {
+        return mailbox.size();
+    }
+
+    /**
+     * Remove all the messages waiting in the mailbox
+     */
+    public final void clearMailbox() {
+        mailbox.clear();
+        mailboxChanged();
+    }
+
+    private void mailboxChanged() {
+        if (!probes.isEmpty()) {
+            publish(ProbeValue.MAILBOX_SIZE, mailbox.size());
+        }
+    }
+
+    // ----------------------------------------------------- sensors and probes
+    /**
+     * Add a sensor : {@link #handleSensor(Sensor)} is called when its value
+     * changes
+     *
+     * @param sensor
+     */
+    public final void addSensor(Sensor<?> sensor) {
+        sensors.add(sensor);
+        sensor.addListener(sensorListener);
+    }
+
+    public final void removeSensor(Sensor<?> sensor) {
+        sensor.removeListener(sensorListener);
+        sensors.remove(sensor);
+    }
+
+    public final List<Sensor<?>> getSensors() {
+        return Collections.unmodifiableList(sensors);
+    }
+
+    /**
+     * Called in the thread changing the value of a sensor of the agent
+     *
+     * @param sensor
+     */
+    protected void handleSensor(Sensor<?> sensor) {
+    }
+
+    /**
+     * Observe the values published by the agent
+     *
+     * @param probe
+     */
+    public final void addProbe(Probe probe) {
+        probes.add(probe);
+    }
+
+    public final void removeProbe(Probe probe) {
+        probes.remove(probe);
+    }
+
+    /**
+     * Publish a value to the probes of the agent
+     *
+     * @param valueName
+     * @param value
+     */
+    protected final void publish(String valueName, Object value) {
+        if (probes.isEmpty()) {
+            return;
+        }
+        ProbeValue probeValue = new ProbeValue(address, valueName, value, Instant.now());
+        for (Probe probe : probes) {
+            try {
+                probe.handleProbe(probeValue);
+            } catch (RuntimeException e) {
+                LOGGER.log(System.Logger.Level.WARNING, "Probe of " + this + " failed", e);
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------ info
+    public final Address getAddress() {
+        return address;
+    }
+
+    public final String getName() {
+        return name;
+    }
+
+    public final Node getNode() {
+        return node;
     }
 
     /**
      *
-     * @return the organization (communities, groups, roles) of the agent
+     * @return the communities, groups and roles of the agent
      */
     public final Organization getOrganization() {
-        return this.organization;
+        return organization;
     }
 
     /**
+     * Print a line prefixed by the name of the agent
      *
-     * @param organization
-     * @return if the agent is part of the organization
+     * @param o
      */
-    public final boolean isInOrganization(Organization organization) {
-        return this.organization.compare(organization);
+    protected final void println(Object o) {
+        System.out.println(name + ": " + o);
     }
 
-    /**
-     * Get the current AgentAddress
-     *
-     * @return
-     */
-    public Address getAddress() {
-        return this.address;
+    @Override
+    public String toString() {
+        return name + "@" + address;
     }
-
-    /**
-     *
-     * @return
-     */
-    public ProbesManager getProbesManager() {
-        return this.probesManager;
-    }
-
-    /**
-     *
-     * @return
-     */
-    public SensorsManager getSensorsManager() {
-        return this.sensorsManager;
-    }
-
-    /**
-     *
-     * @return
-     */
-    public Scheduler getScheduler() {
-        return this.scheduler;
-    }
-
 }

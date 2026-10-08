@@ -21,37 +21,19 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-package fr.eloane.javamas.kernel.probes;
-
-import java.util.function.Consumer;
+package fr.eloane.javamas.kernel.sensors;
 
 /**
- * Observe the values published by an agent
+ * Notified when the value of a sensor changes
  *
  * @author Guillaume Monet
  */
 @FunctionalInterface
-public interface Probe {
+public interface SensorListener {
 
     /**
      *
-     * @param value value published by the agent
+     * @param sensor the sensor whose value changed
      */
-    void handleProbe(ProbeValue value);
-
-    /**
-     *
-     * @param <T> type of the values
-     * @param name name of the values to observe
-     * @param type type of the values to observe
-     * @param handler called with each value of this name and type
-     * @return a probe observing only the values with this name and type
-     */
-    static <T> Probe of(String name, Class<T> type, Consumer<? super T> handler) {
-        return value -> {
-            if (value.name().equals(name) && type.isInstance(value.value())) {
-                handler.accept(type.cast(value.value()));
-            }
-        };
-    }
+    void sensorChanged(Sensor<?> sensor);
 }

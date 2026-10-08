@@ -1,4 +1,4 @@
-/*
+/* 
  * The MIT License
  *
  * Copyright 2018 Guillaume Monet.
@@ -23,85 +23,60 @@
  */
 package fr.eloane.javamas.kernel.organization;
 
-import fr.eloane.javamas.kernel.datas.SynchronizedTree;
-import java.io.Serial;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Community Group Role manager
+ * Memberships of an agent : communities, groups in a community and roles in a
+ * group (Agent Group Role model).<br />
+ * Joining a group also joins its community, playing a role also joins its
+ * group. Thread safe.
  *
  * @author Guillaume Monet
  */
-public class Organization extends SynchronizedTree<String> {
+public final class Organization {
 
-    @Serial
-    private static final long serialVersionUID = 3957756955695688576L;
-
-    public Organization() {
-        super("WORLD");
-    }
-
-    public Organization(String name) {
-        super(name);
-    }
+    private final Set<Target> memberships = ConcurrentHashMap.newKeySet();
 
     /**
      *
      * @param community
-     * @return
+     * @return this
      */
     public Organization joinCommunity(String community) {
-        this.addNode(community);
+        memberships.add(Target.community(community));
         return this;
     }
 
     /**
+     * Leave the community and all its groups and roles
      *
      * @param community
      */
     public void leaveCommunity(String community) {
-        this.removeChild(community);
-    }
-
-    /**
-     *
-     * @param community
-     * @return
-     */
-    public boolean isInCommunity(String community) {
-        return this.contains(community);
+        memberships.removeIf(t -> t.isWithin(Target.community(community)));
     }
 
     /**
      *
      * @param community
      * @param group
-     * @return
+     * @return this
      */
     public Organization joinGroup(String community, String group) {
-        this.addNode(community).addNode(group);
+        joinCommunity(community);
+        memberships.add(Target.group(community, group));
         return this;
     }
 
     /**
+     * Leave the group and all its roles
      *
      * @param community
      * @param group
      */
     public void leaveGroup(String community, String group) {
-        SynchronizedTree<String> c = this.getChild(community);
-        if (c != null) {
-            c.removeChild(group);
-        }
-    }
-
-    /**
-     *
-     * @param community
-     * @param group
-     * @return
-     */
-    public boolean isInGroup(String community, String group) {
-        return this.getGroup(community, group) != null;
+        memberships.removeIf(t -> t.isWithin(Target.group(community, group)));
     }
 
     /**
@@ -109,10 +84,11 @@ public class Organization extends SynchronizedTree<String> {
      * @param community
      * @param group
      * @param role
-     * @return
+     * @return this
      */
     public Organization addRole(String community, String group, String role) {
-        this.addNode(community).addNode(group).addNode(role);
+        joinGroup(community, group);
+        memberships.add(Target.role(community, group, role));
         return this;
     }
 
@@ -123,30 +99,47 @@ public class Organization extends SynchronizedTree<String> {
      * @param role
      */
     public void removeRole(String community, String group, String role) {
-        SynchronizedTree<String> g = this.getGroup(community, group);
-        if (g != null) {
-            g.removeChild(role);
-        }
+        memberships.remove(Target.role(community, group, role));
+    }
+
+    public boolean isInCommunity(String community) {
+        return memberships.contains(Target.community(community));
+    }
+
+    public boolean isInGroup(String community, String group) {
+        return memberships.contains(Target.group(community, group));
+    }
+
+    public boolean hasRole(String community, String group, String role) {
+        return memberships.contains(Target.role(community, group, role));
     }
 
     /**
      *
-     * @param community
-     * @param group
-     * @param role
-     * @return
+     * @param target
+     * @return if the agent is part of the target
      */
-    public boolean hasRole(String community, String group, String role) {
-        SynchronizedTree<String> g = this.getGroup(community, group);
-        return g != null && g.contains(role);
+    public boolean matches(Target target) {
+        return target.community() == null || memberships.contains(target);
     }
 
-    private SynchronizedTree<String> getGroup(String community, String group) {
-        SynchronizedTree<String> c = this.getChild(community);
-        return c == null ? null : c.getChild(group);
+    /**
+     *
+     * @return a copy of the memberships
+     */
+    public Set<Target> getMemberships() {
+        return Set.copyOf(memberships);
     }
 
-    public boolean compare(Organization organization) {
-        return super.compare(organization);
+    /**
+     * Leave everything
+     */
+    public void clear() {
+        memberships.clear();
+    }
+
+    @Override
+    public String toString() {
+        return memberships.toString();
     }
 }

@@ -1,4 +1,4 @@
-/*
+/* 
  * The MIT License
  *
  * Copyright 2018 Guillaume Monet.
@@ -24,43 +24,15 @@
 package fr.eloane.javamas.kernel.sensors;
 
 /**
- * Kind of sensor, typed version of the {@link Sensor} constants
+ * Kind of sensor
  *
  * @author Guillaume Monet
  */
 public enum SensorType {
-    SPEED(Sensor.SPEED),
-    PRESSURE(Sensor.PRESSURE),
-    THERMAL(Sensor.THERMAL),
-    BRIGHTNESS(Sensor.BRIGHTNESS),
-    CONTACT(Sensor.CONTACT),
-    OTHER(0);
-
-    private final int code;
-
-    SensorType(int code) {
-        this.code = code;
-    }
-
-    /**
-     *
-     * @return the matching {@link Sensor} constant
-     */
-    public int getCode() {
-        return code;
-    }
-
-    /**
-     *
-     * @param code a {@link Sensor} constant
-     * @return the matching type or OTHER
-     */
-    public static SensorType fromCode(int code) {
-        for (SensorType t : values()) {
-            if (t.code == code) {
-                return t;
-            }
-        }
-        return OTHER;
-    }
+    SPEED,
+    PRESSURE,
+    THERMAL,
+    BRIGHTNESS,
+    CONTACT,
+    OTHER
 }

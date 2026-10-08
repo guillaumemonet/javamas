@@ -21,37 +21,54 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-package fr.eloane.javamas.kernel.probes;
+package fr.eloane.javamas.kernel.messages;
 
-import java.util.function.Consumer;
+import java.util.Locale;
 
 /**
- * Observe the values published by an agent
+ * FIPA ACL communicative acts
  *
  * @author Guillaume Monet
  */
-@FunctionalInterface
-public interface Probe {
+public enum Performative {
+    ACCEPT_PROPOSAL,
+    AGREE,
+    CANCEL,
+    CFP,
+    CONFIRM,
+    DISCONFIRM,
+    FAILURE,
+    INFORM,
+    INFORM_IF,
+    INFORM_REF,
+    NOT_UNDERSTOOD,
+    PROPOSE,
+    QUERY_IF,
+    QUERY_REF,
+    REFUSE,
+    REJECT_PROPOSAL,
+    REQUEST,
+    REQUEST_WHEN,
+    REQUEST_WHENEVER,
+    SUBSCRIBE,
+    PROXY,
+    PROPAGATE;
 
     /**
      *
-     * @param value value published by the agent
+     * @return the FIPA name, e.g. "accept-proposal"
      */
-    void handleProbe(ProbeValue value);
+    public String fipaName() {
+        return name().toLowerCase(Locale.ROOT).replace('_', '-');
+    }
 
     /**
      *
-     * @param <T> type of the values
-     * @param name name of the values to observe
-     * @param type type of the values to observe
-     * @param handler called with each value of this name and type
-     * @return a probe observing only the values with this name and type
+     * @param name a FIPA name, e.g. "accept-proposal", case insensitive
+     * @return the performative
+     * @throws IllegalArgumentException if the name is unknown
      */
-    static <T> Probe of(String name, Class<T> type, Consumer<? super T> handler) {
-        return value -> {
-            if (value.name().equals(name) && type.isInstance(value.value())) {
-                handler.accept(type.cast(value.value()));
-            }
-        };
+    public static Performative fromFipaName(String name) {
+        return valueOf(name.toUpperCase(Locale.ROOT).replace('-', '_'));
     }
 }

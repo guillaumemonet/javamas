@@ -1,4 +1,4 @@
-/*
+/* 
  * The MIT License
  *
  * Copyright 2018 Guillaume Monet.
@@ -30,9 +30,8 @@ import java.util.UUID;
 /**
  * Unique address of an agent
  *
- * @author Guillaume Monet
- * @version 2.0
  * @param id the unique id of the agent
+ * @author Guillaume Monet
  */
 public record Address(String id) implements Serializable {
 
@@ -41,26 +40,11 @@ public record Address(String id) implements Serializable {
     }
 
     /**
-     * Create a new unique address
-     */
-    public Address() {
-        this("A:" + UUID.randomUUID());
-    }
-
-    /**
      *
      * @return a new unique address
      */
     public static Address generate() {
-        return new Address();
-    }
-
-    /**
-     *
-     * @return the unique id of the agent
-     */
-    public String getId() {
-        return id;
+        return new Address("A:" + UUID.randomUUID());
     }
 
     @Override

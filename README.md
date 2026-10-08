@@ -1,228 +1,156 @@
-# Javamas
+# JavaMAS
 
 ## Java Multi-Agents System
 
+[![build](https://github.com/guillaumemonet/javamas/actions/workflows/build.yml/badge.svg)](https://github.com/guillaumemonet/javamas/actions/workflows/build.yml)
 
-[![Maintainability](https://api.codeclimate.com/v1/badges/782876893a84c694b0a1/maintainability)](https://codeclimate.com/github/guillaumemonet/javamas/maintainability)
+JavaMAS was written in 2003 for a research paper at the LESTER laboratory, and
+modernized in 2026 (Java 21, Gradle, new API).
 
-The term agent that is most often used is undoubtedly the most difficult to define. 
-In the computer world, the concept of agent is still badly determined. 
+The term agent that is most often used is undoubtedly the most difficult to define.
+In the computer world, the concept of agent is still badly determined.
 
-There are two main types of software agents: **cognitive agents** and **reactive agents**. 
+There are two main types of software agents: **cognitive agents** and **reactive agents**.
 
-* A cognitive agent is described as highly intelligent: it can perform complex operations and process various information independently. 
+* A cognitive agent is described as highly intelligent: it can perform complex operations and process various information independently.
 * Reactive agents are, on the contrary, "specialized agents": they can not process information that is too complex, they are already preprogrammed to perform a task or process information.
-
 
 All characteristics of an agent can be described as follows:
 
 * **Communication**: allows agents to communicate with each other and send each other information.
-
 * **Perception**: agents perceive their environment, this can be modeled by various sensors (sensitive, thermal, electroluminescent).
-
 * **Action**: Each agent acts with his environment. These actions can represent jacks.
-
 * **Knowledge**: it is the "memory" of the agents, it is it that allows the agent to make decisions.
-
 * **Decision**: allows agents to determine what actions to take or not, depending on their perceptions and knowledge.
-
 
 Thanks to this organization, the agent can make decisions independently.
 All the interactions between the different characteristics form what we can call "intelligence of the agents".
 
-
-* **Learning** allows to increase the level of knowledge and thus increase autonomy compared to other agents. As we have seen before, learning is due to the interoperability of agents with their environment.
-
+* **Learning** allows to increase the level of knowledge and thus increase autonomy compared to other agents. Learning is due to the interoperability of agents with their environment.
 * **The cooperation** of the agents between them allows a bigger and faster learning.
-
 * **The autonomy** of the agents represents the idea that they can work without direct intervention and within the limits defined by the user.
 
 An agent is a reactive program, in the sense that it modifies its internal state according to its environment.
 It is also endowed with a pro-activity, that is to say that it is able, by its own initiative to carry out actions to reach a goal.
-
 In addition, an agent is characterized by its ability to communicate with other agents or human operators which gives it a social character.
 
-## Internal State
+## How the concepts map to the API
 
-In order to dissociate the internal state of each agent, it has a five-part arrangement.
+| Concept       | API |
+|---------------|-----|
+| Agent         | `Agent` : runs in its own thread (platform or virtual) |
+| Communication | `send(Message)`, `receive()`, `receive(Duration)` ; `ACLMessage` with FIPA `Performative`s |
+| Organization  | `getOrganization()` : communities, groups and roles ; messages sent `to(Target)` |
+| Perception    | `Sensor` added with `addSensor`, handled in `handleSensor` |
+| Knowledge     | `knowledge.Database` (persistent key/value store), `knowledge.MessageHistory` |
+| Observation   | `Probe` added with `addProbe`, values published with `publish(name, value)` |
+| Distribution  | `Node` with UDP, multicast, TCP (TLS) or in-memory `Transport`s |
 
-* **Activation**, the agent starts, activates its functions and dialog methods.
+## Life cycle
 
-* **Live** The live cycle is the most important period for the agent. Here all messages are sent and processed.
+An agent goes through these states (`AgentState`), observable with a probe :
 
-* **End** The end of life of the agent, it can still process certain information.
+* **CREATED** the agent exists and can already receive messages.
+* **ACTIVATING** `init()` then `activate()` : the agent joins its organization, adds its sensors.
+* **LIVING** `live()`, the most important period : messages are sent and processed, usually in a
+  `while (nextStep())` or `receive()` loop.
+* **ENDING** `end()`, the agent can still send messages.
+* **DEAD** the agent is killed : unregistered from its node, sensors and probes released.
 
-* **Kill**, the agent has finished his activity and is permanently destroyed.
+Only `live()` must be implemented. The life cycle can be controlled from outside with
+`setDelay`, `pause`, `resume` and `stop` ; `stop()` also wakes up an agent waiting for a message.
 
-* **Reset**, the agent is reset (if it needs to be reused).
+## Example
 
+```java
+public class HelloWorld {
 
+    static class Listener extends Agent {
+
+        @Override
+        protected void activate() {
+            getOrganization().joinCommunity("WORLD");
+        }
+
+        @Override
+        protected void live() {
+            Message<?> message = receive(Duration.ofSeconds(5));
+            println(message == null ? "nobody said anything" : "received " + message.getContent());
+        }
+    }
+
+    static class Sender extends Agent {
+
+        @Override
+        protected void live() {
+            send(new Message<>("Hello World").to(Target.community("WORLD")));
+        }
+    }
+
+    public static void main(String[] args) throws InterruptedException {
+        Thread listener = new Listener().start();
+        Thread.sleep(100);
+        new Sender().start();
+        listener.join();
+    }
+}
+```
+
+More examples in [src/examples](src/examples/java/fr/eloane/javamas/examples), run them with
+`./gradlew runExample -Pexample=<package.Class>` :
+
+| Example | Shows |
+|---------|-------|
+| `simple.HelloWorld` | messages to a community |
+| `priority.PriorityDemo` | message priorities |
+| `scheduler.SchedulerDemo` | delay, pause, resume, stop |
+| `sensors.ThermostatDemo` | a reactive agent with a sensor |
+| `probes.ProbeDemo` | observing the life cycle and published values |
+| `organization.HiveDemo` | roles and FIPA ACL request / agree / inform |
+| `network.TcpPingPong` | two nodes connected with TCP |
+| `network.MulticastChat` | chat on the local network (`--args=<name>`) |
+
+## Nodes and transports
+
+Agents live in a `Node` (the default node of the JVM unless another one is given to the constructor).
+A node delivers each message once to its agents and exchanges messages with other nodes through
+transports :
+
+```java
+Node node = Node.getDefault();
+node.addTransport(new MulticastTransport(new InetSocketAddress("239.255.80.84", 7889)));
+node.addTransport(new TcpTransport(7890, List.of(new InetSocketAddress("other-host", 7890))));
+```
+
+* A message received from a transport is forwarded to the other transports (and to the other peers
+  of a TCP transport) while its time to live allows it (`Message.ttl`, 4 by default).
+* Expired messages (`expiresAfter`, `expiresAt`) are never delivered.
+* `TcpTransport` accepts `SSLServerSocketFactory` / `SSLSocketFactory` for TLS.
+* `InMemoryTransport` connects nodes of the same JVM, for tests and simulations.
+
+Messages are encoded with a `MessageCodec`. The default `JavaSerializationCodec` only accepts
+JavaMAS classes and basic JDK types : the classes used as content must be allowed explicitly.
+
+```java
+JavaSerializationCodec codec = new JavaSerializationCodec().allowPackage("com.example.content");
+node.addTransport(new TcpTransport(7890, peers, ServerSocketFactory.getDefault(), SocketFactory.getDefault(), codec));
+```
+
+## Logging
+
+JavaMAS logs through `System.Logger` (java.util.logging by default, or SLF4J / Log4j when one of their
+`System.LoggerFinder` bridges is on the classpath).
 
 ## Build
 
-The project is built with Gradle (wrapper included) and requires **Java 21**. Gradle downloads a JDK 21 toolchain if none is installed.
+Requires **Java 21** (Gradle downloads a JDK 21 toolchain if needed).
 
 ```
-./gradlew build        # compile, run tests, build jars in build/libs
+./gradlew build                 # compile, test, build the jars in build/libs
+./gradlew runExample -Pexample=simple.HelloWorld
 ./gradlew publishToMavenLocal
 ```
 
-## How to use it
+## License
 
-
-### Simple example : Agents Dialog one the same node
-```java
-
-import fr.eloane.javamas.kernel.Agent;
-import fr.eloane.javamas.kernel.messages.Message;
-
-/**
- *
- * @author Guillaume Monet
- */
-public class Listener extends Agent<String>{
-
-    @Override
-    protected void activate() {
-        this.getOrganization().joinCommunity("WORLD");
-    }
-
-    @Override
-    protected void live() {
-        Message mess = this.waitNextMessage();
-        System.out.println(mess);
-    }
-
-    @Override
-    protected void end() {
-        
-    }
-    
-}
-
-```
-
-```java
-import fr.eloane.javamas.kernel.Agent;
-import fr.eloane.javamas.kernel.messages.Message;
-import fr.eloane.javamas.kernel.organization.Organization;
-
-/**
- *
- * @author Guillaume Monet
- */
-public class Sender extends Agent<String> {
-    
-    @Override
-    protected void activate() {
-        this.getOrganization().joinCommunity("WORLD");
-    }
-    
-    @Override
-    protected void live() {
-        Message mess = new Message("Hello World");
-        mess.addOrganization(new Organization("WORLD"));
-        this.sendMessage(mess);
-    }
-    
-    @Override
-    protected void end() {
-        
-    }
-    
-}
-
-```
-
-```java
-
-/**
- *
- * @author Guillaume Monet
- */
-public class Launch {
-    public static void main(String[] args){
-        (new Listener()).start();
-        (new Sender()).start();
-    }
-}
-
-```
-
-
-
-### Waiting for message for 5 seconds
-```java
-
-import fr.eloane.javamas.kernel.Agent;
-
-public class Waiting extends Agent {
-
-    @Override
-    public void activate() {
-        this.getOrganization().joinGroup("TEST", "WAITER");
-    }
-
-    @Override
-    public void live() {
-        this.println("WAITING FOR MESSAGE");
-        this.waitNextMessage(5000);
-        this.println("NO MORE WAITING");
-    }
-
-    @Override
-    public void end() {
-    }
-
-    public static void main(String[] args) {
-        (new Waiting()).start();
-    }
-}
-
-```
-
-
-### Messages between nodes (network transports)
-
-Messages received through the UDP / Multicast transports are deserialized with a
-class allowlist (JavaMAS classes, `String`, boxed primitives, basic collections...).
-Classes used as message content must be allowed explicitly before receiving them:
-
-```java
-SecureObjectInputStream.allowClass(MyContent.class);
-// or
-SecureObjectInputStream.allowPackage("com.example.content");
-```
-
-
-### Sensors and probes
-
-```java
-// Sensor : the agent's handleSensor(Sensor<?>) is called each time the value changes
-Sensor<Integer> thermal = new Sensor<>(SensorType.THERMAL);
-agent.getSensorsManager().addSensor(thermal);
-thermal.setValue(21);
-
-// Probe : observe the values published by an agent with probe(description, value)
-agent.getProbesManager().addProbe(Probe.of(AgentProbeValue.class, value -> System.out.println(value)));
-```
-
-Sensor types can also be given as `int` constants (`Sensor.THERMAL`...).
-
-### Transports
-
-```java
-Map<String, String> params = Map.of(TransportMulticast.IP, "239.255.80.84", TransportMulticast.PORT, "7889");
-Node.getHandle().addTransport(TransportFactory.getTransport(TransportFactory.TransportType.MULTICAST, params));
-```
-
-### Threads
-
-`agent.start()` runs the agent in a platform thread (daemon or not, see the constructors).
-`agent.startVirtual()` runs it in a virtual thread : thousands of agents can wait for
-messages at a low cost, but virtual threads don't keep the JVM alive.
-
-### Logging
-
-JavaMAS logs through `System.Logger` (java.util.logging by default, or SLF4J / Log4j
-when one of their `System.LoggerFinder` bridges is on the classpath).
+MIT

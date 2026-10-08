@@ -33,6 +33,25 @@ tasks.compileJava {
     options.compilerArgs.addAll(listOf("-Xlint:all", "-Xlint:-serial", "-Xlint:-this-escape"))
 }
 
+val examples: SourceSet by sourceSets.creating {
+    compileClasspath += sourceSets.main.get().output
+    runtimeClasspath += sourceSets.main.get().output
+}
+
+// ./gradlew runExample -Pexample=network.TcpPingPong [--args="..."]
+tasks.register<JavaExec>("runExample") {
+    group = "application"
+    description = "Runs an example, e.g. -Pexample=simple.HelloWorld"
+    classpath = examples.runtimeClasspath
+    mainClass = providers.gradleProperty("example").map { "fr.eloane.javamas.examples.$it" }
+        .orElse("fr.eloane.javamas.examples.simple.HelloWorld")
+    standardInput = System.`in`
+}
+
+tasks.check {
+    dependsOn(tasks.named(examples.classesTaskName))
+}
+
 tasks.withType<Javadoc>().configureEach {
     (options as StandardJavadocDocletOptions).addStringOption("Xdoclint:none", "-quiet")
 }

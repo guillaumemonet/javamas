@@ -1,4 +1,4 @@
-/*
+/* 
  * The MIT License
  *
  * Copyright 2018 Guillaume Monet.
@@ -23,85 +23,68 @@
  */
 package fr.eloane.javamas.kernel.messages;
 
-import fr.eloane.javamas.kernel.organization.Organization;
+import fr.eloane.javamas.kernel.Address;
+import fr.eloane.javamas.kernel.organization.Target;
 import java.io.Serial;
 import java.io.Serializable;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 /**
- * Project: JavaMAS: Java Multi-Agents System File: Message.java<br />
- * The envelope of the message is stored as map fields, the content is typed.
+ * Message exchanged by agents.<br />
+ * The envelope (id, sender, receivers, targets, priority, expiration...) is
+ * typed, free headers can be added (see the FIPA header names) and the content
+ * is typed.<br />
+ * A message is delivered to its receivers (agent addresses) and to the agents
+ * matching its targets (community, group, role).
  *
  * @param <T> type of the content
+ * @author Guillaume Monet
  */
-public class Message<T> extends HashMap<String, Object> implements Cloneable, Serializable, Comparable<Message<?>> {
-
-    public static final String MESSAGE_ID = "message-id";
-    public static final String IN_REPLY_TO = "in-reply-to";
-    public static final String REPLY_BY = "reply_by";
-    /**
-     * Participant in communication
-     */
-    public static final String REPLY_TO = "reply-to";
-    /**
-     * Description of Content
-     */
-    public static final String LANGUAGE = "language";
-    /**
-     * Description of Content
-     */
-    public static final String ENCODING = "encoding";
-    /**
-     * Description of Content
-     */
-    public static final String ONTOLOGY = "ontology";
-    /**
-     * Control of conversation
-     */
-    public static final String PROTOCOL = "protocol";
-    /**
-     * Control of conversation
-     */
-    public static final String REPLY_WITH = "reply-with";
-    public static final String CONVERSATION_ID = "conversation_id";
-    public static final String PRIORITY = "priority";
-    public static final String EXPIRE = "expire";
-    /**
-     * @deprecated misspelled, use {@link #EXPIRE}
-     */
-    @Deprecated
-    public static final String EXPRIRE = EXPIRE;
-    public static final String CREATED = "created";
-    public static final String SENDER = "sender";
-    public static final String RECEIVERS = "receivers";
-    public static final String RECEIVERS_ORGANIZATIONS = "receivers-organization";
-
-    public static final int HIGH_PRIORITY = 1;
-    public static final int LOW_PRIORITY = -1;
-    public static final int NORMAL_PRIORITY = 0;
-    public static final int EXTREM_PRIORITY = 2;
+public class Message<T> implements Serializable, Cloneable {
 
     @Serial
-    private static final long serialVersionUID = -1322293292088397862L;
+    private static final long serialVersionUID = 2L;
 
     /**
-     *
+     * Number of relays between transports allowed by default
      */
-    protected T content = null;
+    public static final int DEFAULT_TTL = 4;
+
+    // FIPA header names
+    public static final String IN_REPLY_TO = "in-reply-to";
+    public static final String REPLY_BY = "reply-by";
+    public static final String REPLY_TO = "reply-to";
+    public static final String REPLY_WITH = "reply-with";
+    public static final String LANGUAGE = "language";
+    public static final String ENCODING = "encoding";
+    public static final String ONTOLOGY = "ontology";
+    public static final String PROTOCOL = "protocol";
+
+    private final String id;
+    private final Instant created;
+    private String conversationId;
+    private String sender;
+    private ArrayList<String> receivers = new ArrayList<>();
+    private ArrayList<Target> targets = new ArrayList<>();
+    private Priority priority = Priority.NORMAL;
+    private Instant expiresAt;
+    private int ttl = DEFAULT_TTL;
+    private HashMap<String, Serializable> headers = new HashMap<>();
+    private T content;
 
     /**
-     *
+     * Message without content
      */
     public Message() {
-        this.put(Message.PRIORITY, NORMAL_PRIORITY);
-        this.put(Message.CREATED, System.currentTimeMillis());
-        this.put(Message.MESSAGE_ID, "M:" + UUID.randomUUID());
-        this.put(Message.CONVERSATION_ID, "C:" + UUID.randomUUID());
+        this(null);
     }
 
     /**
@@ -109,328 +92,260 @@ public class Message<T> extends HashMap<String, Object> implements Cloneable, Se
      * @param content
      */
     public Message(T content) {
-        this();
-        this.setContent(content);
-    }
-
-    /**
-     *
-     * @param content
-     * @param expire
-     */
-    public Message(T content, long expire) {
-        this();
-        this.setContent(content);
-        this.put(Message.EXPIRE, expire);
-    }
-
-    /**
-     *
-     * @param expire
-     */
-    public Message(long expire) {
-        this();
-        this.put(Message.EXPIRE, expire);
-    }
-
-    /**
-     *
-     * @return the unique id of the message
-     */
-    public final String getId() {
-        return this.get(MESSAGE_ID).toString();
-    }
-
-    /**
-     *
-     * @return
-     */
-    public final T getContent() {
-        return this.content;
-    }
-
-    /**
-     *
-     * @param content
-     * @return
-     */
-    public final Message<T> setContent(T content) {
+        this.id = "M:" + UUID.randomUUID();
+        this.created = Instant.now();
+        this.conversationId = "C:" + UUID.randomUUID();
         this.content = content;
-        return this;
     }
 
     /**
-     * @param s
-     * @return
-     */
-    public final Message<T> setSender(String s) {
-        this.put(Message.SENDER, s);
-        return this;
-    }
-
-    /**
-     * Returns the original sender. This information can be trusted
+     * Copy of the message : same id, same envelope (copied), same content
+     * instance
      *
-     * @return
+     * @return the copy
      */
-    public final String getSender() {
-        return (String) this.get(Message.SENDER);
-    }
-
-    /**
-     *
-     * @param s
-     * @return
-     */
-    public final Message<T> addReceiver(String s) {
-        ArrayList<String> receivers = this.getReceivers();
-        receivers.add(s);
-        this.setReceivers(receivers);
-        return this;
-    }
-
-    /**
-     *
-     * @param s
-     * @return
-     */
-    public final Message<T> removeReceiver(String s) {
-        ArrayList<String> receivers = this.getReceivers();
-        receivers.remove(s);
-        this.setReceivers(receivers);
-        return this;
-    }
-
-    /**
-     *
-     * @param r
-     * @return
-     */
-    public final Message<T> addReceivers(ArrayList<String> r) {
-        ArrayList<String> receivers = this.getReceivers();
-        receivers.addAll(r);
-        this.setReceivers(receivers);
-        return this;
-    }
-
-    /**
-     *
-     * @param r
-     * @return
-     */
-    public final Message<T> setReceivers(ArrayList<String> r) {
-        this.put(Message.RECEIVERS, new ArrayList<>(r));
-        return this;
-    }
-
-    /**
-     * @return a copy of the receivers ids
-     */
-    public final ArrayList<String> getReceivers() {
-        return this.getList(Message.RECEIVERS);
-    }
-
-    /**
-     *
-     * @return
-     */
-    public final Message<T> removeReceivers() {
-        this.remove(Message.RECEIVERS);
-        return this;
-    }
-
-    /**
-     *
-     * @param t
-     * @return
-     */
-    public final Message<T> addOrganization(Organization t) {
-        ArrayList<Organization> organizations = this.getOrganizations();
-        organizations.add(t);
-        this.setOrganizations(organizations);
-        return this;
-    }
-
-    /**
-     *
-     * @param t
-     * @return
-     */
-    public final Message<T> removeOrganization(Organization t) {
-        ArrayList<Organization> organizations = this.getOrganizations();
-        organizations.remove(t);
-        this.setOrganizations(organizations);
-        return this;
-    }
-
-    /**
-     *
-     * @param t
-     * @return
-     */
-    public final Message<T> setOrganization(Organization t) {
-        ArrayList<Organization> organizations = new ArrayList<>();
-        organizations.add(t);
-        return this.setOrganizations(organizations);
-    }
-
-    /**
-     *
-     * @param organizations
-     * @return
-     */
-    public final Message<T> setOrganizations(ArrayList<Organization> organizations) {
-        this.put(Message.RECEIVERS_ORGANIZATIONS, new ArrayList<>(organizations));
-        return this;
-    }
-
-    /**
-     *
-     * @return
-     */
-    public final Message<T> removeOrganizations() {
-        this.remove(RECEIVERS_ORGANIZATIONS);
-        return this;
-    }
-
-    /**
-     *
-     * @return a copy of the receivers organizations
-     */
-    public final ArrayList<Organization> getOrganizations() {
-        return this.getList(Message.RECEIVERS_ORGANIZATIONS);
-    }
-
     @SuppressWarnings("unchecked")
-    private <E> ArrayList<E> getList(String type) {
-        Collection<E> array = (Collection<E>) this.get(type);
-        return array == null ? new ArrayList<>() : new ArrayList<>(array);
-    }
-
-    private long getLong(String key, long defaultValue) {
-        Object value = this.get(key);
-        if (value == null) {
-            return defaultValue;
+    public Message<T> copy() {
+        try {
+            Message<T> copy = (Message<T>) super.clone();
+            copy.receivers = new ArrayList<>(receivers);
+            copy.targets = new ArrayList<>(targets);
+            copy.headers = new HashMap<>(headers);
+            return copy;
+        } catch (CloneNotSupportedException e) {
+            throw new AssertionError(e);
         }
-        return value instanceof Number n ? n.longValue() : Long.parseLong(value.toString());
     }
 
     /**
+     * Reply to this message : sent to the sender, same conversation
      *
-     * @return
+     * @param <R> type of the content of the reply
+     * @param content content of the reply
+     * @return the reply
      */
-    public final int getPriority() {
-        return (int) this.getLong(Message.PRIORITY, NORMAL_PRIORITY);
+    public <R> Message<R> reply(R content) {
+        Message<R> reply = new Message<>(content);
+        reply.conversationId = this.conversationId;
+        reply.header(IN_REPLY_TO, this.id);
+        if (this.sender != null) {
+            reply.to(this.sender);
+        }
+        return reply;
+    }
+
+    /**
+     * Add a receiver
+     *
+     * @param address address of the receiver
+     * @return this
+     */
+    public Message<T> to(Address address) {
+        return to(address.id());
+    }
+
+    /**
+     * Add a receiver
+     *
+     * @param agentId id of the receiver
+     * @return this
+     */
+    public Message<T> to(String agentId) {
+        if (!receivers.contains(agentId)) {
+            receivers.add(Objects.requireNonNull(agentId));
+        }
+        return this;
+    }
+
+    /**
+     * Send the message to all the agents matching the target
+     *
+     * @param target community, group or role
+     * @return this
+     */
+    public Message<T> to(Target target) {
+        if (!targets.contains(target)) {
+            targets.add(Objects.requireNonNull(target));
+        }
+        return this;
     }
 
     /**
      *
      * @param priority
-     * @return
+     * @return this
      */
-    public final Message<T> setPriority(int priority) {
-        this.put(Message.PRIORITY, priority);
+    public Message<T> priority(Priority priority) {
+        this.priority = Objects.requireNonNull(priority);
+        return this;
+    }
+
+    /**
+     * The message is dropped if it is not delivered before the duration
+     *
+     * @param duration
+     * @return this
+     */
+    public Message<T> expiresAfter(Duration duration) {
+        return expiresAt(created.plus(duration));
+    }
+
+    /**
+     *
+     * @param instant expiration time, null for no expiration
+     * @return this
+     */
+    public Message<T> expiresAt(Instant instant) {
+        this.expiresAt = instant;
         return this;
     }
 
     /**
      *
-     * @return creation
+     * @param ttl number of relays between transports allowed
+     * @return this
      */
-    public final long getTime() {
-        return this.getLong(Message.CREATED, 0);
+    public Message<T> ttl(int ttl) {
+        this.ttl = ttl;
+        return this;
     }
 
     /**
      *
-     * @return expire date or 0 if the message never expires
+     * @param name
+     * @param value null to remove the header
+     * @return this
      */
-    public final long getExpire() {
-        return this.getLong(Message.EXPIRE, 0);
-    }
-
-    /**
-     *
-     * @param key
-     * @param value
-     * @return
-     */
-    public final Message<T> setField(String key, Object value) {
-        if (!key.equals(Message.CREATED) && !key.equals(Message.MESSAGE_ID)) {
-            this.put(key, value);
+    public Message<T> header(String name, Serializable value) {
+        if (value == null) {
+            headers.remove(name);
+        } else {
+            headers.put(name, value);
         }
         return this;
     }
 
     /**
-     * Copy of the message (same id), the receivers and organizations lists are
-     * copied, the content is shared
      *
-     * @return
+     * @param content
+     * @return this
      */
-    @Override
-    @SuppressWarnings("unchecked")
-    public Message<T> clone() {
-        Message<T> clone = (Message<T>) super.clone();
-        if (this.containsKey(RECEIVERS)) {
-            clone.put(RECEIVERS, this.getReceivers());
-        }
-        if (this.containsKey(RECEIVERS_ORGANIZATIONS)) {
-            clone.put(RECEIVERS_ORGANIZATIONS, this.getOrganizations());
-        }
-        return clone;
+    public Message<T> content(T content) {
+        this.content = content;
+        return this;
     }
 
     /**
-     * Order by priority (highest first) then by time (oldest first)
      *
-     * @param mess
-     * @return
+     * @param conversationId
+     * @return this
      */
-    @Override
-    public int compareTo(Message<?> mess) {
-        int priority = Integer.compare(mess.getPriority(), this.getPriority());
-        return priority != 0 ? priority : Long.compare(this.getTime(), mess.getTime());
+    public Message<T> conversation(String conversationId) {
+        this.conversationId = Objects.requireNonNull(conversationId);
+        return this;
     }
 
     /**
+     * Set by the agent sending the message
+     *
+     * @param sender id of the sender
+     * @return this
+     */
+    public Message<T> sender(String sender) {
+        this.sender = sender;
+        return this;
+    }
+
+    public String getId() {
+        return id;
+    }
+
+    public Instant getCreated() {
+        return created;
+    }
+
+    public String getConversationId() {
+        return conversationId;
+    }
+
+    /**
+     *
+     * @return the id of the sender, null if the message was not sent yet
+     */
+    public String getSender() {
+        return sender;
+    }
+
+    public List<String> getReceivers() {
+        return Collections.unmodifiableList(receivers);
+    }
+
+    public List<Target> getTargets() {
+        return Collections.unmodifiableList(targets);
+    }
+
+    public Priority getPriority() {
+        return priority;
+    }
+
+    /**
+     *
+     * @return the expiration time or null
+     */
+    public Instant getExpiresAt() {
+        return expiresAt;
+    }
+
+    /**
+     *
+     * @param now
+     * @return if the message is expired at this time
+     */
+    public boolean isExpired(Instant now) {
+        return expiresAt != null && now.isAfter(expiresAt);
+    }
+
+    public int getTtl() {
+        return ttl;
+    }
+
+    /**
+     *
+     * @param name
+     * @return the header value or null
+     */
+    public Serializable getHeader(String name) {
+        return headers.get(name);
+    }
+
+    public Map<String, Serializable> getHeaders() {
+        return Collections.unmodifiableMap(headers);
+    }
+
+    public T getContent() {
+        return content;
+    }
+
+    /**
+     * Two messages are equal if they have the same id
      *
      * @param o
-     * @return if the messages have the same id
+     * @return
      */
     @Override
     public boolean equals(Object o) {
-        return o instanceof Message<?> m && Objects.equals(this.get(MESSAGE_ID), m.get(MESSAGE_ID));
+        return o instanceof Message<?> m && id.equals(m.id);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hashCode(this.get(MESSAGE_ID));
+        return id.hashCode();
     }
 
-    /**
-     * Reply this message
-     *
-     * @return a new message with sender id as receiver and conversation id and
-     * same fields
-     */
-    public Message<T> reply() {
-        Message<T> reply = new Message<>();
-        reply.addReceiver(this.getSender());
-        reply.setField(Message.CONVERSATION_ID, this.get(Message.CONVERSATION_ID));
-        return reply;
-    }
-
-    /**
-     * Returns a debug string with enveloppe and content for the message
-     *
-     * @return message's content + other info
-     */
     @Override
     public String toString() {
-        return this.entrySet().stream()
-                .map(s -> s.getKey() + ":" + String.valueOf(s.getValue()).replace("\n", "") + "\n")
-                .collect(Collectors.joining())
-                + "Content:\n" + this.getContent() + "\n";
+        return getClass().getSimpleName() + "[id=" + id + ", from=" + sender + ", to=" + receivers + targets
+                + ", priority=" + priority + (headers.isEmpty() ? "" : ", headers=" + headers)
+                + ", content=" + content + "]";
     }
 }

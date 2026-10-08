@@ -1,4 +1,4 @@
-/*
+/* 
  * The MIT License
  *
  * Copyright 2018 Guillaume Monet.
@@ -23,53 +23,51 @@
  */
 package fr.eloane.javamas.kernel;
 
-import java.io.Serial;
-import java.io.Serializable;
-import java.util.concurrent.TimeUnit;
+import java.time.Duration;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
- * Control the steps of an agent's life cycle : delay between steps, pause,
+ * Controls the steps of an agent's life cycle : delay between steps, pause,
  * resume and stop.<br />
  * Uses a lock instead of synchronized so virtual threads are not pinned while
  * waiting.
  *
  * @author Guillaume Monet
  */
-public class Scheduler implements Serializable {
-
-    @Serial
-    private static final long serialVersionUID = 992501499415467420L;
+public final class Scheduler {
 
     private final ReentrantLock lock = new ReentrantLock();
     private final Condition changed = lock.newCondition();
-    private boolean paused = false;
     private boolean running = true;
-    private long delayNanos = 0;
+    private boolean paused = false;
+    private boolean timedPause = false;
     private long pauseUntil = 0;
+    private long delayNanos = 0;
 
     /**
-     * Wait for the next step of the life cycle
+     * Wait for the next step : during the pause and the delay between steps
      *
-     * @return if life cycle can proceed
+     * @return true if the life cycle can proceed, false if it is stopped
      */
     public boolean nextStep() {
         lock.lock();
         try {
-            while (running && (paused || pauseUntil - System.nanoTime() > 0)) {
+            long delay = delayNanos;
+            while (running) {
                 if (paused) {
                     changed.await();
-                } else {
+                } else if (timedPause && pauseUntil - System.nanoTime() > 0) {
                     changed.awaitNanos(pauseUntil - System.nanoTime());
+                } else if (delay > 0) {
+                    timedPause = false;
+                    delay = changed.awaitNanos(delay);
+                } else {
+                    timedPause = false;
+                    return true;
                 }
             }
-            pauseUntil = 0;
-            long remaining = delayNanos;
-            while (running && !paused && remaining > 0) {
-                remaining = changed.awaitNanos(remaining);
-            }
-            return running;
+            return false;
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
             running = false;
@@ -87,12 +85,15 @@ public class Scheduler implements Serializable {
     }
 
     /**
-     * Pause during time
+     * Pause during a time
      *
-     * @param time pause duration in milliseconds
+     * @param duration
      */
-    public void pause(long time) {
-        update(() -> pauseUntil = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(time));
+    public void pause(Duration duration) {
+        update(() -> {
+            timedPause = true;
+            pauseUntil = System.nanoTime() + duration.toNanos();
+        });
     }
 
     /**
@@ -101,12 +102,12 @@ public class Scheduler implements Serializable {
     public void resume() {
         update(() -> {
             paused = false;
-            pauseUntil = 0;
+            timedPause = false;
         });
     }
 
     /**
-     * Stop the life cycle, {@link #nextStep()} will return false
+     * Stop the life cycle : {@link #nextStep()} returns false
      */
     public void stop() {
         update(() -> running = false);
@@ -114,15 +115,15 @@ public class Scheduler implements Serializable {
 
     /**
      *
-     * @param delay delay between each step in milliseconds
+     * @param delay delay between each step
      */
-    public void setDelay(long delay) {
-        update(() -> delayNanos = TimeUnit.MILLISECONDS.toNanos(delay));
+    public void setDelay(Duration delay) {
+        update(() -> delayNanos = delay.toNanos());
     }
 
     /**
      *
-     * @return if the life cycle is not stopped
+     * @return false if the life cycle is stopped
      */
     public boolean isRunning() {
         lock.lock();

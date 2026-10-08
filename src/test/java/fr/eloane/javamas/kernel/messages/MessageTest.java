@@ -1,45 +1,67 @@
 package fr.eloane.javamas.kernel.messages;
 
+import fr.eloane.javamas.kernel.organization.Target;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
 class MessageTest {
 
     @Test
-    void cloneHasItsOwnReceivers() {
-        Message<String> mess = new Message<>("hello").addReceiver("a");
-        Message<String> clone = mess.clone();
-        clone.addReceiver("b");
+    void copyHasItsOwnEnvelope() {
+        Message<String> mess = new Message<>("hello").to("a").header(Message.LANGUAGE, "fr");
+        Message<String> copy = mess.copy();
+        copy.to("b").header(Message.LANGUAGE, "en").to(Target.community("c"));
         assertEquals(List.of("a"), mess.getReceivers());
-        assertEquals(List.of("a", "b"), clone.getReceivers());
-        assertEquals(mess, clone);
-        assertEquals(mess.hashCode(), clone.hashCode());
+        assertEquals("fr", mess.getHeader(Message.LANGUAGE));
+        assertTrue(mess.getTargets().isEmpty());
+        assertEquals(mess, copy);
+        assertEquals(mess.hashCode(), copy.hashCode());
     }
 
     @Test
-    void idsAreUnique() {
-        assertNotEquals(new Message<>().getId(), new Message<>().getId());
+    void replyGoesToTheSenderInTheSameConversation() {
+        Message<String> question = new Message<>("ping").sender("A:1");
+        Message<Integer> answer = question.reply(42);
+        assertEquals(List.of("A:1"), answer.getReceivers());
+        assertEquals(question.getConversationId(), answer.getConversationId());
+        assertEquals(question.getId(), answer.getHeader(Message.IN_REPLY_TO));
+        assertNotEquals(question.getId(), answer.getId());
     }
 
     @Test
-    void toStringAcceptsNullContent() {
-        assertTrue(new Message<>().toString().contains("Content:\nnull"));
+    void expiration() {
+        Message<String> mess = new Message<>("x");
+        assertFalse(mess.isExpired(Instant.now().plusSeconds(3600)));
+        mess.expiresAfter(Duration.ofSeconds(10));
+        assertFalse(mess.isExpired(Instant.now()));
+        assertTrue(mess.isExpired(Instant.now().plusSeconds(11)));
     }
 
     @Test
-    void expireIsOptional() {
-        assertEquals(0, new Message<>().getExpire());
-        assertEquals(42, new Message<>(42L).getExpire());
+    void aclMessages() {
+        ACLMessage request = new ACLMessage(Performative.REQUEST, "open the door");
+        request.sender("A:1");
+        ACLMessage copy = request.copy();
+        assertEquals(Performative.REQUEST, copy.getPerformative());
+        ACLMessage agree = request.reply(Performative.AGREE, "ok");
+        assertEquals(List.of("A:1"), agree.getReceivers());
+        assertEquals(request.getConversationId(), agree.getConversationId());
+        assertEquals("accept-proposal", Performative.ACCEPT_PROPOSAL.fipaName());
+        assertEquals(Performative.NOT_UNDERSTOOD, Performative.fromFipaName("Not-Understood"));
     }
 
     @Test
-    void aclPerformatives() {
-        assertEquals(ACLMessage.NOT_UNDERSTOOD_STRING, new ACLMessage().getPerformative());
-        assertEquals(ACLMessage.CONFIRM_STRING, new ACLMessage(ACLMessage.CONFIRM, "ok").getPerformative());
-        assertEquals("CONFIRM", ACLMessage.CONFIRM_STRING);
-        assertEquals("INFORM", new ACLMessage("inform", "x").getPerformative());
+    void targetsNeedTheirParent() {
+        assertThrows(IllegalArgumentException.class, () -> new Target(null, "group", null));
+        assertThrows(IllegalArgumentException.class, () -> new Target("c", null, "role"));
+        assertEquals("lab/team/leader", Target.role("lab", "team", "leader").toString());
+        assertEquals("*", Target.all().toString());
     }
 }

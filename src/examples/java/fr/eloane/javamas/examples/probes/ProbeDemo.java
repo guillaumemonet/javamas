@@ -21,37 +21,34 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-package fr.eloane.javamas.kernel.probes;
+package fr.eloane.javamas.examples.probes;
 
-import java.util.function.Consumer;
+import fr.eloane.javamas.kernel.Agent;
+import fr.eloane.javamas.kernel.AgentState;
+import fr.eloane.javamas.kernel.probes.Probe;
+import fr.eloane.javamas.kernel.probes.ProbeValue;
+import java.time.Duration;
 
 /**
- * Observe the values published by an agent
- *
- * @author Guillaume Monet
+ * Observe an agent from outside : its life cycle and the values it publishes
  */
-@FunctionalInterface
-public interface Probe {
+public class ProbeDemo {
 
-    /**
-     *
-     * @param value value published by the agent
-     */
-    void handleProbe(ProbeValue value);
+    static class Worker extends Agent {
 
-    /**
-     *
-     * @param <T> type of the values
-     * @param name name of the values to observe
-     * @param type type of the values to observe
-     * @param handler called with each value of this name and type
-     * @return a probe observing only the values with this name and type
-     */
-    static <T> Probe of(String name, Class<T> type, Consumer<? super T> handler) {
-        return value -> {
-            if (value.name().equals(name) && type.isInstance(value.value())) {
-                handler.accept(type.cast(value.value()));
+        @Override
+        protected void live() {
+            for (int done = 1; done <= 5 && nextStep(); done++) {
+                publish("progress", done * 20);
             }
-        };
+        }
+    }
+
+    public static void main(String[] args) throws InterruptedException {
+        Worker worker = new Worker();
+        worker.setDelay(Duration.ofMillis(300));
+        worker.addProbe(Probe.of(ProbeValue.STATE, AgentState.class, state -> System.out.println("state: " + state)));
+        worker.addProbe(Probe.of("progress", Integer.class, percent -> System.out.println("progress: " + percent + "%")));
+        worker.start().join();
     }
 }
