@@ -39,7 +39,8 @@ In addition, an agent is characterized by its ability to communicate with other 
 | Agent         | `Agent` : runs in its own thread (platform or virtual) |
 | Communication | `send(Message)`, `receive()`, `receive(Duration)` ; `ACLMessage` with FIPA `Performative`s |
 | Organization  | `getOrganization()` : communities, groups and roles ; messages sent `to(Target)` |
-| Perception    | `Sensor` added with `addSensor`, handled in `handleSensor` |
+| Perception    | `Sensor` added with `addSensor`, handled in `handleSensor` ; sensors bound to an `Environment` property |
+| Action        | changing the properties of the `Environment` |
 | Knowledge     | `knowledge.Database` (persistent key/value store), `knowledge.MessageHistory` |
 | Observation   | `Probe` added with `addProbe`, values published with `publish(name, value)` |
 | Distribution  | `Node` with UDP, multicast, TCP (TLS) or in-memory `Transport`s |
@@ -102,11 +103,30 @@ More examples in [src/examples](src/examples/java/fr/eloane/javamas/examples), r
 | `simple.HelloWorld` | messages to a community |
 | `priority.PriorityDemo` | message priorities |
 | `scheduler.SchedulerDemo` | delay, pause, resume, stop |
-| `sensors.ThermostatDemo` | a reactive agent with a sensor |
+| `environment.ThermostatDemo` | perception, decision and action in a shared environment |
 | `probes.ProbeDemo` | observing the life cycle and published values |
 | `organization.HiveDemo` | roles and FIPA ACL request / agree / inform |
 | `network.TcpPingPong` | two nodes connected with TCP |
 | `network.MulticastChat` | chat on the local network (`--args=<name>`) |
+
+## Environment
+
+An `Environment` is shared by agents : a set of named properties. Agents perceive it with sensors
+bound to properties and act on it by changing properties ; dynamics rules make it evolve at each
+step, run manually (`step()`, for reproducible simulations) or periodically (`start(period)`).
+
+```java
+Environment room = new Environment("room");
+room.set("temperature", 21.0);
+room.addDynamics(env -> env.update("temperature", Double.class,
+        t -> t - 0.15 + (env.get("heater", Boolean.class, false) ? 0.4 : 0)));
+
+// in the agent
+addSensor(room.sensor("temperature", Double.class, SensorType.THERMAL)); // perception
+room.set("heater", true);                                                // action
+
+room.start(Duration.ofMillis(50));
+```
 
 ## Nodes and transports
 
@@ -134,6 +154,32 @@ JavaSerializationCodec codec = new JavaSerializationCodec().allowPackage("com.ex
 node.addTransport(new TcpTransport(7890, peers, ServerSocketFactory.getDefault(), SocketFactory.getDefault(), codec));
 ```
 
+### JSON codec
+
+`JsonCodec` exchanges messages with nodes written in other languages (format `javamas/1`) :
+
+```json
+{
+  "format": "javamas/1",
+  "id": "M:1", "created": "2026-10-08T12:00:00Z", "conversation": "C:1",
+  "sender": "A:0", "receivers": ["A:1"],
+  "targets": [{"community": "lab", "group": "team", "role": null}],
+  "priority": "normal", "expiresAt": null, "ttl": 4,
+  "headers": {"language": "fr"},
+  "performative": "inform",
+  "contentType": "position",
+  "content": {"x": 1, "y": 2}
+}
+```
+
+Only `format`, `id`, `created`, `conversation` and `priority` are required ; `performative` makes it an
+`ACLMessage`. Strings, numbers, booleans, lists and maps are decoded as such ; other content types
+must be registered with a name, no class is ever chosen from the received data :
+
+```java
+JsonCodec codec = new JsonCodec().registerType("position", Position.class);
+```
+
 ## Logging
 
 JavaMAS logs through `System.Logger` (java.util.logging by default, or SLF4J / Log4j when one of their
@@ -145,7 +191,7 @@ Requires **Java 21** (Gradle downloads a JDK 21 toolchain if needed).
 
 ```
 ./gradlew build                 # compile, test, build the jars in build/libs
-./gradlew runExample -Pexample=simple.HelloWorld
+./gradlew runExample -Pexample=simple.HelloWorld   # quote it in PowerShell : '-Pexample=simple.HelloWorld'
 ./gradlew publishToMavenLocal
 ```
 
