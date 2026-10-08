@@ -1,4 +1,4 @@
-/* 
+/*
  * The MIT License
  *
  * Copyright 2018 Guillaume Monet.
@@ -23,7 +23,11 @@
  */
 package fr.eloane.javamas.kernel.utils;
 
-import java.io.File;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
 
 /**
  * Genere ou charge l'espace de travail ~/JavaMAS/agents : sources des agents
@@ -34,23 +38,26 @@ import java.io.File;
  */
 public abstract class WorkSpace {
 
+    public static final Path ROOT = FileUtils.HOME_PATH.resolve("JavaMAS");
+
+    private static final List<String> DIRECTORIES = List.of("agents", "build", "deploy", "docs", "tmp");
+
     private WorkSpace() {
     }
 
     /**
+     * Create the workspace directories if needed
      *
-     * @throws SecurityException
+     * @throws SecurityException if the access is denied
+     * @throws UncheckedIOException if a directory can't be created
      */
     public static void checkWorkSpace() throws SecurityException {
-        File agents = new File(FileUtils.HOME + FileUtils.SEPARATOR + "JavaMAS" + FileUtils.SEPARATOR + "agents");
-        File build = new File(FileUtils.HOME + FileUtils.SEPARATOR + "JavaMAS" + FileUtils.SEPARATOR + "build");
-        File deploy = new File(FileUtils.HOME + FileUtils.SEPARATOR + "JavaMAS" + FileUtils.SEPARATOR + "deploy");
-        File docs = new File(FileUtils.HOME + FileUtils.SEPARATOR + "JavaMAS" + FileUtils.SEPARATOR + "docs");
-        File tmp = new File(FileUtils.HOME + FileUtils.SEPARATOR + "JavaMAS" + FileUtils.SEPARATOR + "tmp");
-        agents.mkdirs();
-        build.mkdirs();
-        deploy.mkdirs();
-        docs.mkdirs();
-        tmp.mkdirs();
+        try {
+            for (String dir : DIRECTORIES) {
+                Files.createDirectories(ROOT.resolve(dir));
+            }
+        } catch (IOException ex) {
+            throw new UncheckedIOException(ex);
+        }
     }
 }

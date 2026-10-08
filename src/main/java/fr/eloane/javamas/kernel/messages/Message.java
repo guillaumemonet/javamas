@@ -1,4 +1,4 @@
-/* 
+/*
  * The MIT License
  *
  * Copyright 2018 Guillaume Monet.
@@ -23,102 +23,70 @@
  */
 package fr.eloane.javamas.kernel.messages;
 
+import fr.eloane.javamas.kernel.organization.Organization;
+import java.io.Serial;
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
-import java.util.concurrent.atomic.AtomicInteger;
-import fr.eloane.javamas.kernel.Node;
-import fr.eloane.javamas.kernel.organization.Organization;
+import java.util.Objects;
+import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
- * Project: JavaMAS: Java Multi-Agents System File: Message.java
+ * Project: JavaMAS: Java Multi-Agents System File: Message.java<br />
+ * The envelope of the message is stored as map fields, the content is typed.
  *
- * @param <T>
+ * @param <T> type of the content
  */
 public class Message<T> extends HashMap<String, Object> implements Cloneable, Serializable, Comparable<Message<?>> {
 
-    /**
-     *
-     */
     public static final String MESSAGE_ID = "message-id";
-    /**
-     *
-     */
     public static final String IN_REPLY_TO = "in-reply-to";
-    /**
-     *
-     */
     public static final String REPLY_BY = "reply_by";
     /**
-     *
+     * Participant in communication
      */
-    public static final String REPLY_TO = "reply-to";//Participant in communication
+    public static final String REPLY_TO = "reply-to";
     /**
-     *
+     * Description of Content
      */
-    public static final String LANGUAGE = "language";//Description of Content
+    public static final String LANGUAGE = "language";
     /**
-     *
+     * Description of Content
      */
-    public static final String ENCODING = "encoding";//Description of Content
+    public static final String ENCODING = "encoding";
     /**
-     *
+     * Description of Content
      */
-    public static final String ONTOLOGY = "ontology";//Description of Content
+    public static final String ONTOLOGY = "ontology";
     /**
-     *
+     * Control of conversation
      */
-    public static final String PROTOCOL = "protocol";//Control of conversation  
+    public static final String PROTOCOL = "protocol";
     /**
-     *
+     * Control of conversation
      */
-    public static final String REPLY_WITH = "reply-with";//Control of conversation
-    /**
-     *
-     */
+    public static final String REPLY_WITH = "reply-with";
     public static final String CONVERSATION_ID = "conversation_id";
-    /**
-     *
-     */
     public static final String PRIORITY = "priority";
+    public static final String EXPIRE = "expire";
     /**
-     *
+     * @deprecated misspelled, use {@link #EXPIRE}
      */
-    public static final String EXPRIRE = "expire";
-    /**
-     *
-     */
+    @Deprecated
+    public static final String EXPRIRE = EXPIRE;
     public static final String CREATED = "created";
-    /**
-     *
-     */
     public static final String SENDER = "sender";
-    /**
-     *
-     */
     public static final String RECEIVERS = "receivers";
-    /**
-     *
-     */
     public static final String RECEIVERS_ORGANIZATIONS = "receivers-organization";
-    /**
-     *
-     */
+
     public static final int HIGH_PRIORITY = 1;
-    /**
-     *
-     */
     public static final int LOW_PRIORITY = -1;
-    /**
-     *
-     */
     public static final int NORMAL_PRIORITY = 0;
-    /**
-     *
-     */
     public static final int EXTREM_PRIORITY = 2;
-    private static AtomicInteger message_inc = new AtomicInteger();
-    private static AtomicInteger conversation_inc = new AtomicInteger();
+
+    @Serial
     private static final long serialVersionUID = -1322293292088397862L;
 
     /**
@@ -132,8 +100,8 @@ public class Message<T> extends HashMap<String, Object> implements Cloneable, Se
     public Message() {
         this.put(Message.PRIORITY, NORMAL_PRIORITY);
         this.put(Message.CREATED, System.currentTimeMillis());
-        this.put(Message.MESSAGE_ID, this.generateMessageId());
-        this.put(Message.CONVERSATION_ID, this.generateConversationId());
+        this.put(Message.MESSAGE_ID, "M:" + UUID.randomUUID());
+        this.put(Message.CONVERSATION_ID, "C:" + UUID.randomUUID());
     }
 
     /**
@@ -153,7 +121,7 @@ public class Message<T> extends HashMap<String, Object> implements Cloneable, Se
     public Message(T content, long expire) {
         this();
         this.setContent(content);
-        this.put(Message.EXPRIRE, expire);
+        this.put(Message.EXPIRE, expire);
     }
 
     /**
@@ -162,12 +130,12 @@ public class Message<T> extends HashMap<String, Object> implements Cloneable, Se
      */
     public Message(long expire) {
         this();
-        this.put(Message.EXPRIRE, expire);
+        this.put(Message.EXPIRE, expire);
     }
 
     /**
      *
-     * @return
+     * @return the unique id of the message
      */
     public final String getId() {
         return this.get(MESSAGE_ID).toString();
@@ -251,15 +219,15 @@ public class Message<T> extends HashMap<String, Object> implements Cloneable, Se
      * @return
      */
     public final Message<T> setReceivers(ArrayList<String> r) {
-        this.put(Message.RECEIVERS, r);
+        this.put(Message.RECEIVERS, new ArrayList<>(r));
         return this;
     }
 
     /**
-     * @return
+     * @return a copy of the receivers ids
      */
     public final ArrayList<String> getReceivers() {
-        return (ArrayList<String>) this.getArray(Message.RECEIVERS);
+        return this.getList(Message.RECEIVERS);
     }
 
     /**
@@ -279,7 +247,7 @@ public class Message<T> extends HashMap<String, Object> implements Cloneable, Se
     public final Message<T> addOrganization(Organization t) {
         ArrayList<Organization> organizations = this.getOrganizations();
         organizations.add(t);
-        this.put(Message.RECEIVERS_ORGANIZATIONS, organizations);
+        this.setOrganizations(organizations);
         return this;
     }
 
@@ -291,7 +259,7 @@ public class Message<T> extends HashMap<String, Object> implements Cloneable, Se
     public final Message<T> removeOrganization(Organization t) {
         ArrayList<Organization> organizations = this.getOrganizations();
         organizations.remove(t);
-        this.put(Message.RECEIVERS_ORGANIZATIONS, organizations);
+        this.setOrganizations(organizations);
         return this;
     }
 
@@ -303,8 +271,7 @@ public class Message<T> extends HashMap<String, Object> implements Cloneable, Se
     public final Message<T> setOrganization(Organization t) {
         ArrayList<Organization> organizations = new ArrayList<>();
         organizations.add(t);
-        this.put(Message.RECEIVERS_ORGANIZATIONS, organizations);
-        return this;
+        return this.setOrganizations(organizations);
     }
 
     /**
@@ -313,7 +280,7 @@ public class Message<T> extends HashMap<String, Object> implements Cloneable, Se
      * @return
      */
     public final Message<T> setOrganizations(ArrayList<Organization> organizations) {
-        this.put(Message.RECEIVERS_ORGANIZATIONS, organizations);
+        this.put(Message.RECEIVERS_ORGANIZATIONS, new ArrayList<>(organizations));
         return this;
     }
 
@@ -328,18 +295,24 @@ public class Message<T> extends HashMap<String, Object> implements Cloneable, Se
 
     /**
      *
-     * @return
+     * @return a copy of the receivers organizations
      */
     public final ArrayList<Organization> getOrganizations() {
-        return (ArrayList<Organization>) this.getArray(Message.RECEIVERS_ORGANIZATIONS);
+        return this.getList(Message.RECEIVERS_ORGANIZATIONS);
     }
 
-    private ArrayList getArray(String type) {
-        ArrayList array = (ArrayList) this.get(type);
-        if (array == null) {
-            array = new ArrayList<>();
+    @SuppressWarnings("unchecked")
+    private <E> ArrayList<E> getList(String type) {
+        Collection<E> array = (Collection<E>) this.get(type);
+        return array == null ? new ArrayList<>() : new ArrayList<>(array);
+    }
+
+    private long getLong(String key, long defaultValue) {
+        Object value = this.get(key);
+        if (value == null) {
+            return defaultValue;
         }
-        return array;
+        return value instanceof Number n ? n.longValue() : Long.parseLong(value.toString());
     }
 
     /**
@@ -347,7 +320,7 @@ public class Message<T> extends HashMap<String, Object> implements Cloneable, Se
      * @return
      */
     public final int getPriority() {
-        return Integer.parseInt(this.get(Message.PRIORITY).toString());
+        return (int) this.getLong(Message.PRIORITY, NORMAL_PRIORITY);
     }
 
     /**
@@ -365,15 +338,15 @@ public class Message<T> extends HashMap<String, Object> implements Cloneable, Se
      * @return creation
      */
     public final long getTime() {
-        return Long.parseLong(this.get(Message.CREATED).toString());
+        return this.getLong(Message.CREATED, 0);
     }
 
     /**
      *
-     * @return expire date
+     * @return expire date or 0 if the message never expires
      */
     public final long getExpire() {
-        return Long.parseLong(this.get(Message.EXPRIRE).toString());
+        return this.getLong(Message.EXPIRE, 0);
     }
 
     /**
@@ -390,71 +363,49 @@ public class Message<T> extends HashMap<String, Object> implements Cloneable, Se
     }
 
     /**
+     * Copy of the message (same id), the receivers and organizations lists are
+     * copied, the content is shared
+     *
      * @return
      */
     @Override
-    public Message<?> clone() {
-        return (Message<?>) super.clone();
+    @SuppressWarnings("unchecked")
+    public Message<T> clone() {
+        Message<T> clone = (Message<T>) super.clone();
+        if (this.containsKey(RECEIVERS)) {
+            clone.put(RECEIVERS, this.getReceivers());
+        }
+        if (this.containsKey(RECEIVERS_ORGANIZATIONS)) {
+            clone.put(RECEIVERS_ORGANIZATIONS, this.getOrganizations());
+        }
+        return clone;
     }
 
     /**
-     * Order by priority then by time
+     * Order by priority (highest first) then by time (oldest first)
      *
      * @param mess
      * @return
      */
     @Override
     public int compareTo(Message<?> mess) {
-        int priority = this.comparePriority(mess);
-        if (priority == 0) {
-            return this.compareTime(mess);
-        } else {
-            return priority;
-        }
-    }
-
-    /**
-     *
-     * @param mess
-     * @return
-     */
-    private int comparePriority(Message<?> mess) {
-        if (this.getPriority() < mess.getPriority()) {
-            return 1;
-        } else if (this.getPriority() > mess.getPriority()) {
-            return -1;
-        } else {
-            return 0;
-        }
-    }
-
-    /**
-     *
-     * @param mess
-     * @return
-     */
-    private int compareTime(Message<?> mess) {
-        if (this.getTime() < mess.getTime()) {
-            return 1;
-        } else if (this.getTime() > mess.getTime()) {
-            return -1;
-        } else {
-            return 0;
-        }
+        int priority = Integer.compare(mess.getPriority(), this.getPriority());
+        return priority != 0 ? priority : Long.compare(this.getTime(), mess.getTime());
     }
 
     /**
      *
      * @param o
-     * @return
+     * @return if the messages have the same id
      */
     @Override
     public boolean equals(Object o) {
-        if (o instanceof Message) {
-            return this.get(MESSAGE_ID).equals(((Message) o).get(MESSAGE_ID));
-        } else {
-            return false;
-        }
+        return o instanceof Message<?> m && Objects.equals(this.get(MESSAGE_ID), m.get(MESSAGE_ID));
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hashCode(this.get(MESSAGE_ID));
     }
 
     /**
@@ -471,27 +422,15 @@ public class Message<T> extends HashMap<String, Object> implements Cloneable, Se
     }
 
     /**
-     *
-     * @return
-     */
-    private String generateConversationId() {
-        return "C:" + Message.conversation_inc.getAndIncrement() + "@" + Node.getHandle().hashCode();
-    }
-
-    private String generateMessageId() {
-        return "M:" + message_inc.getAndIncrement() + "@" + Node.getHandle().hashCode();
-    }
-
-    /**
      * Returns a debug string with enveloppe and content for the message
      *
      * @return message's content + other info
      */
     @Override
     public String toString() {
-        String ret = "";
-        ret = this.entrySet().stream().map((s) -> s.getKey() + ":" + s.getValue().toString().replace("\n", "") + "\n").reduce(ret, String::concat);
-        ret += "Content:\n" + this.getContent().toString() + "\n";
-        return ret;
+        return this.entrySet().stream()
+                .map(s -> s.getKey() + ":" + String.valueOf(s.getValue()).replace("\n", "") + "\n")
+                .collect(Collectors.joining())
+                + "Content:\n" + this.getContent() + "\n";
     }
 }

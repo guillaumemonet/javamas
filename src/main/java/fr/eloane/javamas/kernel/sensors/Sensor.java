@@ -1,4 +1,4 @@
-/* 
+/*
  * The MIT License
  *
  * Copyright 2018 Guillaume Monet.
@@ -23,43 +23,35 @@
  */
 package fr.eloane.javamas.kernel.sensors;
 
+import java.io.Serial;
 import java.io.Serializable;
 import java.util.Observable;
 
 /**
+ * Perception of the environment : notifies its observers each time its value
+ * changes
  *
- * @param <T>
+ * @param <T> type of the value
  * @author Guillaume Monet
  */
+@SuppressWarnings("deprecation")
 public class Sensor<T> extends Observable implements Serializable {
 
-    /**
-     *
-     */
     public static final int SPEED = 1;
-    /**
-     *
-     */
     public static final int PRESSURE = 2;
-    /**
-     *
-     */
     public static final int THERMAL = 3;
-    /**
-     *
-     */
     public static final int BRIGHTNESS = 4;
-    /**
-     *
-     */
     public static final int CONTACT = 5;
+
+    @Serial
     private static final long serialVersionUID = -5754532731305532805L;
-    private int type;
-    private T value;
+
+    private final int type;
+    private volatile T value;
 
     /**
      *
-     * @param type
+     * @param type one of the type constants, see also {@link SensorType}
      */
     public Sensor(int type) {
         this.type = type;
@@ -67,7 +59,15 @@ public class Sensor<T> extends Observable implements Serializable {
 
     /**
      *
-     * @return
+     * @param type
+     */
+    public Sensor(SensorType type) {
+        this(type.getCode());
+    }
+
+    /**
+     *
+     * @return the type constant
      */
     public int getType() {
         return type;
@@ -75,13 +75,22 @@ public class Sensor<T> extends Observable implements Serializable {
 
     /**
      *
-     * @return
+     * @return the type, {@link SensorType#OTHER} for custom types
+     */
+    public SensorType getSensorType() {
+        return SensorType.fromCode(type);
+    }
+
+    /**
+     *
+     * @return the current value
      */
     public T getValue() {
         return value;
     }
 
     /**
+     * Change the value and notify the observers
      *
      * @param value
      */
@@ -91,12 +100,8 @@ public class Sensor<T> extends Observable implements Serializable {
         this.notifyObservers();
     }
 
-    /**
-     *
-     * @return
-     */
     @Override
     public String toString() {
-        return this.value.toString();
+        return String.valueOf(this.value);
     }
 }

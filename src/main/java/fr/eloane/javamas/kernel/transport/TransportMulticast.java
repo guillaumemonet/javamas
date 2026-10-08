@@ -1,4 +1,4 @@
-/* 
+/*
  * The MIT License
  *
  * Copyright 2018 Guillaume Monet.
@@ -23,87 +23,77 @@
  */
 package fr.eloane.javamas.kernel.transport;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
-import java.net.DatagramPacket;
-import java.net.MulticastSocket;
 import fr.eloane.javamas.kernel.messages.Message;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.net.DatagramPacket;
 import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.MulticastSocket;
 import java.util.HashMap;
 
 /**
+ * Exchange messages with all the nodes of a multicast group
  *
  * @author Guillaume Monet
- * @version 1.0
+ * @version 2.0
  */
 public final class TransportMulticast extends Transport {
 
-    private MulticastSocket multicastSocket = null;
-    private DatagramPacket datagramPacket;
-    private ByteArrayInputStream byteArrayInputStream;
-    private ObjectInputStream objectInputStream;
-    private final byte[] BUFFER = new byte[8192];
+    private static final System.Logger LOGGER = System.getLogger(TransportMulticast.class.getName());
+
     public static final String IP = "IP";
     public static final String PORT = "PORT";
 
-    private InetAddress ip;
-    private int port;
+    /**
+     * Max size of an UDP datagram
+     */
+    private static final int MAX_PACKET_SIZE = 65507;
 
+    private final byte[] buffer = new byte[MAX_PACKET_SIZE];
+    private final MulticastSocket multicastSocket;
+    private final InetSocketAddress group;
+
+    /**
+     *
+     * @param parameters IP (multicast group) and PORT
+     * @throws UncheckedIOException if the socket can't be opened
+     */
     public TransportMulticast(HashMap<String, String> parameters) {
         super(parameters);
         try {
-            this.ip = InetAddress.getByName(parameters.get(TransportMulticast.IP));
-            this.port = Integer.parseInt(parameters.get(TransportMulticast.PORT));
-            this.multicastSocket = new MulticastSocket(this.port);
-            this.multicastSocket.joinGroup(ip);
-        } catch (Exception ex) {
-            ex.printStackTrace();
+            this.group = new InetSocketAddress(InetAddress.getByName(parameters.get(IP)), Integer.parseInt(parameters.get(PORT)));
+            this.multicastSocket = new MulticastSocket(group.getPort());
+            this.multicastSocket.setTimeToLive(255);
+            this.multicastSocket.joinGroup(group, null);
+        } catch (IOException ex) {
+            throw new UncheckedIOException("Can't open multicast transport", ex);
         }
     }
 
-    /**
-     *
-     * @param mess
-     */
     @Override
     public void sendMessage(Message<?> mess) {
-        try (ByteArrayOutputStream bout = new ByteArrayOutputStream(); ObjectOutputStream out = new ObjectOutputStream(bout)) {
-            out.writeObject(mess);
-            byte[] msg = bout.toByteArray();
-            DatagramPacket hi = new DatagramPacket(msg, msg.length, ip, port);
-            multicastSocket.setTimeToLive(255);
-            multicastSocket.send(hi);
-        } catch (NullPointerException | IOException e) {
-            e.printStackTrace();
+        byte[] msg = serialize(mess);
+        try {
+            multicastSocket.send(new DatagramPacket(msg, msg.length, group));
+        } catch (IOException e) {
+            LOGGER.log(System.Logger.Level.WARNING, "Can't send message " + mess.getId(), e);
         }
     }
 
-    /**
-     *
-     */
     @Override
     public void kill() {
         this.multicastSocket.close();
     }
 
-    /**
-     *
-     * @return
-     */
     @Override
-    public Message waitMessage() {
+    public Message<?> waitMessage() {
+        DatagramPacket datagramPacket = new DatagramPacket(buffer, buffer.length);
         try {
-            datagramPacket = new DatagramPacket(BUFFER, BUFFER.length);
             multicastSocket.receive(datagramPacket);
-            byteArrayInputStream = new ByteArrayInputStream(datagramPacket.getData());
-            objectInputStream = new ObjectInputStream(byteArrayInputStream);
-            return (Message) objectInputStream.readObject();
-        } catch (NullPointerException | IOException | ClassNotFoundException | ClassCastException e) {
-            e.printStackTrace();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
         }
-        return null;
+        return deserialize(datagramPacket.getData(), datagramPacket.getLength());
     }
 }

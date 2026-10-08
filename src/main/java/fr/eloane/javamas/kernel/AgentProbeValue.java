@@ -1,4 +1,4 @@
-/* 
+/*
  * The MIT License
  *
  * Copyright 2018 Guillaume Monet.
@@ -26,30 +26,18 @@ package fr.eloane.javamas.kernel;
 import java.io.Serializable;
 
 /**
+ * Value published by an agent to its probes
  *
- * @param <T>
+ * @param <T> type of the value
+ * @param description description of the value
+ * @param value the value
  * @author Guillaume Monet
  */
-public final class AgentProbeValue<T> implements Serializable {
-
-    private static final long serialVersionUID = 129848311235166634L;
-
-    private final T value;
-    private final String desc;
+public record AgentProbeValue<T>(String description, T value) implements Serializable {
 
     /**
      *
-     * @param desc
-     * @param value
-     */
-    public AgentProbeValue(String desc, T value) {
-        this.desc = desc;
-        this.value = value;
-    }
-
-    /**
-     *
-     * @return
+     * @return the class of the value
      */
     public Class<?> getClassValue() {
         return value.getClass();
@@ -57,18 +45,14 @@ public final class AgentProbeValue<T> implements Serializable {
 
     /**
      *
-     * @return
+     * @return the description of the value
      */
     public String getDescription() {
-        return desc;
+        return description;
     }
 
-    /**
-     *
-     * @return
-     */
     @Override
     public String toString() {
-        return "PROBE VALUE : " + desc + " " + value.toString();
+        return "PROBE VALUE : " + description + " " + value;
     }
 }

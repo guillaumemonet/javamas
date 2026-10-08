@@ -1,4 +1,4 @@
-/* 
+/*
  * The MIT License
  *
  * Copyright 2018 Guillaume Monet.
@@ -25,47 +25,67 @@ package fr.eloane.javamas.kernel.transport;
 
 import fr.eloane.javamas.kernel.exception.UnknownTransport;
 import java.util.HashMap;
+import java.util.Map;
 
 /**
+ * Create transports
  *
  * @author Guillaume Monet
  */
 public abstract class TransportFactory {
 
-    /**
-     *
-     */
     public static final int TRANSPORT_TCP = 1;
-    /**
-     *
-     */
     public static final int TRANSPORT_UDP = 2;
-    /**
-     *
-     */
     public static final int TRANSPORT_MULTICAST = 3;
+
+    /**
+     * Available transports
+     */
+    public enum TransportType {
+        TCP, UDP, MULTICAST
+    }
 
     private TransportFactory() {
     }
 
     /**
      *
-     * @param transport_type
-     * @param parameters
-     * @return
-     * @throws UnknownTransport
+     * @param transport_type one of the TRANSPORT_ constants
+     * @param parameters configuration of the transport, see the constants of
+     * each transport
+     * @return a new transport, not started
+     * @throws UnknownTransport if the type is unknown
      */
     public static Transport getTransport(int transport_type, HashMap<String, String> parameters) throws UnknownTransport {
-        switch (transport_type) {
-            case TRANSPORT_TCP:
-                return new TransportTCP(parameters);
-            case TRANSPORT_UDP:
-                return new TransportUDP(parameters);
-            case TRANSPORT_MULTICAST:
-                return new TransportMulticast(parameters);
-            default:
+        return switch (transport_type) {
+            case TRANSPORT_TCP ->
+                getTransport(TransportType.TCP, parameters);
+            case TRANSPORT_UDP ->
+                getTransport(TransportType.UDP, parameters);
+            case TRANSPORT_MULTICAST ->
+                getTransport(TransportType.MULTICAST, parameters);
+            default ->
                 throw new UnknownTransport();
-        }
+        };
+    }
+
+    /**
+     *
+     * @param type the kind of transport
+     * @param parameters configuration of the transport, see the constants of
+     * each transport
+     * @return a new transport, not started
+     */
+    public static Transport getTransport(TransportType type, Map<String, String> parameters) {
+        HashMap<String, String> params = new HashMap<>(parameters);
+        return switch (type) {
+            case TCP ->
+                new TransportTCP(params);
+            case UDP ->
+                new TransportUDP(params);
+            case MULTICAST ->
+                new TransportMulticast(params);
+        };
     }
 
 }

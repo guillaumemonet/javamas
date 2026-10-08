@@ -1,4 +1,4 @@
-/* 
+/*
  * The MIT License
  *
  * Copyright 2018 Guillaume Monet.
@@ -23,29 +23,23 @@
  */
 package fr.eloane.javamas.kernel.utils;
 
+import java.io.File;
+import java.nio.file.Path;
+
 /**
  *
  * @author guillaume
- * @version 1.0.0
+ * @version 2.0.0
  */
 public abstract class FileUtils {
 
-    /**
-     *
-     */
-    public final static String HOME = System.getProperty("user.home");
-    /**
-     *
-     */
-    public final static String TEMP = System.getProperty("java.io.tmpdir");
-    /**
-     *
-     */
+    public static final String HOME = System.getProperty("user.home");
+    public static final String TEMP = System.getProperty("java.io.tmpdir");
     public static String CURRENT = "";
-    /**
-     *
-     */
-    public final static String SEPARATOR = System.getProperty("file.separator");
+    public static final String SEPARATOR = File.separator;
+
+    public static final Path HOME_PATH = Path.of(HOME);
+    public static final Path TEMP_PATH = Path.of(TEMP);
 
     private FileUtils() {
     }

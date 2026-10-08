@@ -1,4 +1,4 @@
-/* 
+/*
  * The MIT License
  *
  * Copyright 2018 Guillaume Monet.
@@ -25,12 +25,16 @@ package fr.eloane.javamas.kernel.utils;
 
 import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
+import java.util.stream.Collectors;
 
 /**
  *
  * @author guillaume
- * @version 1.0.0
+ * @version 2.0.0
  */
 public final class JarUtils {
 
@@ -38,22 +42,24 @@ public final class JarUtils {
     }
 
     /**
+     * Read a text resource
      *
-     * @param cls
-     * @param filename
-     * @return
+     * @param cls class used to locate the resource
+     * @param filename name of the resource, relative to the class
+     * @return the lines of the resource (UTF-8) concatenated without line
+     * separators
+     * @throws IllegalArgumentException if the resource doesn't exist
+     * @throws UncheckedIOException if the resource can't be read
      */
     public static String loadContentFile(Class<?> cls, String filename) {
-        String ret = "";
-        BufferedReader rd = new BufferedReader(new InputStreamReader(cls.getResourceAsStream(filename)));
-        String line;
-        try {
-            while ((line = rd.readLine()) != null) {
-                ret += line;
-            }
-        } catch (IOException ex) {
-            ex.printStackTrace();
+        InputStream in = cls.getResourceAsStream(filename);
+        if (in == null) {
+            throw new IllegalArgumentException("Resource not found : " + filename);
         }
-        return ret;
+        try (BufferedReader rd = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
+            return rd.lines().collect(Collectors.joining());
+        } catch (IOException ex) {
+            throw new UncheckedIOException(ex);
+        }
     }
 }

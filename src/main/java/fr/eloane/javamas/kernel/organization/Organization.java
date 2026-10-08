@@ -1,4 +1,4 @@
-/* 
+/*
  * The MIT License
  *
  * Copyright 2018 Guillaume Monet.
@@ -24,6 +24,7 @@
 package fr.eloane.javamas.kernel.organization;
 
 import fr.eloane.javamas.kernel.datas.SynchronizedTree;
+import java.io.Serial;
 
 /**
  * Community Group Role manager
@@ -32,6 +33,7 @@ import fr.eloane.javamas.kernel.datas.SynchronizedTree;
  */
 public class Organization extends SynchronizedTree<String> {
 
+    @Serial
     private static final long serialVersionUID = 3957756955695688576L;
 
     public Organization() {
@@ -57,7 +59,7 @@ public class Organization extends SynchronizedTree<String> {
      * @param community
      */
     public void leaveCommunity(String community) {
-        this.removeNode(community);
+        this.removeChild(community);
     }
 
     /**
@@ -73,7 +75,7 @@ public class Organization extends SynchronizedTree<String> {
      *
      * @param community
      * @param group
-     * @return 
+     * @return
      */
     public Organization joinGroup(String community, String group) {
         this.addNode(community).addNode(group);
@@ -86,7 +88,10 @@ public class Organization extends SynchronizedTree<String> {
      * @param group
      */
     public void leaveGroup(String community, String group) {
-        this.getTree(community).removeNode(group);
+        SynchronizedTree<String> c = this.getChild(community);
+        if (c != null) {
+            c.removeChild(group);
+        }
     }
 
     /**
@@ -96,7 +101,7 @@ public class Organization extends SynchronizedTree<String> {
      * @return
      */
     public boolean isInGroup(String community, String group) {
-        return this.contains(community) && this.getTree(community).contains(group);
+        return this.getGroup(community, group) != null;
     }
 
     /**
@@ -104,7 +109,7 @@ public class Organization extends SynchronizedTree<String> {
      * @param community
      * @param group
      * @param role
-     * @return 
+     * @return
      */
     public Organization addRole(String community, String group, String role) {
         this.addNode(community).addNode(group).addNode(role);
@@ -118,7 +123,10 @@ public class Organization extends SynchronizedTree<String> {
      * @param role
      */
     public void removeRole(String community, String group, String role) {
-        this.getTree(community).getTree(group).removeNode(role);
+        SynchronizedTree<String> g = this.getGroup(community, group);
+        if (g != null) {
+            g.removeChild(role);
+        }
     }
 
     /**
@@ -129,7 +137,13 @@ public class Organization extends SynchronizedTree<String> {
      * @return
      */
     public boolean hasRole(String community, String group, String role) {
-        return this.contains(community) && this.getTree(community).contains(group) && this.getTree(community).getTree(group).contains(role);
+        SynchronizedTree<String> g = this.getGroup(community, group);
+        return g != null && g.contains(role);
+    }
+
+    private SynchronizedTree<String> getGroup(String community, String group) {
+        SynchronizedTree<String> c = this.getChild(community);
+        return c == null ? null : c.getChild(group);
     }
 
     public boolean compare(Organization organization) {

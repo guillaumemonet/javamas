@@ -1,4 +1,4 @@
-/* 
+/*
  * The MIT License
  *
  * Copyright 2018 Guillaume Monet.
@@ -24,89 +24,77 @@
 package fr.eloane.javamas.kernel.transport;
 
 import fr.eloane.javamas.kernel.messages.Message;
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
+import java.io.UncheckedIOException;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.util.HashMap;
 
 /**
+ * Exchange messages with one other node using UDP
  *
  * @author Guillaume Monet
  */
 public class TransportUDP extends Transport {
 
-    private DatagramSocket datagramSocket = null;
-    private DatagramPacket datagramPacket;
-    private ByteArrayInputStream byteArrayInputStream;
-    private ObjectInputStream objectInputStream;
-    private final byte[] BUFFER = new byte[8192];
+    private static final System.Logger LOGGER = System.getLogger(TransportUDP.class.getName());
+
     public static final String SERVERIP = "SERVERIP";
     public static final String SERVERPORT = "SERVERPORT";
     public static final String DESTINATIONIP = "DESTINATIONIP";
     public static final String DESTINATIONPORT = "DESTINATIONPORT";
 
-    private InetAddress serverAddress;
-    private int serverPort;
-    private int destinationPort;
-    private InetAddress destinationAddress;
+    /**
+     * Max size of an UDP datagram
+     */
+    private static final int MAX_PACKET_SIZE = 65507;
 
+    private final byte[] buffer = new byte[MAX_PACKET_SIZE];
+    private final DatagramSocket datagramSocket;
+    private final InetSocketAddress destination;
+
+    /**
+     *
+     * @param parameters SERVERIP, SERVERPORT, DESTINATIONIP, DESTINATIONPORT
+     * @throws UncheckedIOException if the socket can't be opened
+     */
     public TransportUDP(HashMap<String, String> parameters) {
         super(parameters);
         try {
-            this.serverAddress = InetAddress.getByName(parameters.get(TransportUDP.SERVERIP));
-            this.serverPort = Integer.parseInt(parameters.get(TransportUDP.SERVERPORT));
-            this.destinationAddress = InetAddress.getByName(parameters.get(TransportUDP.DESTINATIONIP));
-            this.destinationPort = Integer.parseInt(parameters.get(TransportUDP.DESTINATIONPORT));
-            this.datagramSocket = new DatagramSocket(this.serverPort, this.serverAddress);
-        } catch (Exception ex) {
-            ex.printStackTrace();
+            InetAddress serverAddress = InetAddress.getByName(parameters.get(SERVERIP));
+            int serverPort = Integer.parseInt(parameters.get(SERVERPORT));
+            this.destination = new InetSocketAddress(InetAddress.getByName(parameters.get(DESTINATIONIP)), Integer.parseInt(parameters.get(DESTINATIONPORT)));
+            this.datagramSocket = new DatagramSocket(serverPort, serverAddress);
+        } catch (IOException ex) {
+            throw new UncheckedIOException("Can't open UDP transport", ex);
         }
     }
 
-    /**
-     *
-     * @param mess
-     */
     @Override
     public void sendMessage(Message<?> mess) {
-        try (ByteArrayOutputStream bout = new ByteArrayOutputStream(); ObjectOutputStream out = new ObjectOutputStream(bout)) {
-            out.writeObject(mess);
-            byte[] msg = bout.toByteArray();
-            DatagramPacket hi = new DatagramPacket(msg, msg.length, destinationAddress, destinationPort);
-            datagramSocket.send(hi);
-        } catch (NullPointerException | IOException e) {
-            e.printStackTrace();
+        byte[] msg = serialize(mess);
+        try {
+            datagramSocket.send(new DatagramPacket(msg, msg.length, destination));
+        } catch (IOException e) {
+            LOGGER.log(System.Logger.Level.WARNING, "Can't send message " + mess.getId(), e);
         }
     }
 
-    /**
-     *
-     */
     @Override
     public void kill() {
         this.datagramSocket.close();
     }
 
-    /**
-     *
-     * @return
-     */
     @Override
-    public Message waitMessage() {
+    public Message<?> waitMessage() {
+        DatagramPacket datagramPacket = new DatagramPacket(buffer, buffer.length);
         try {
-            datagramPacket = new DatagramPacket(BUFFER, BUFFER.length);
             datagramSocket.receive(datagramPacket);
-            byteArrayInputStream = new ByteArrayInputStream(datagramPacket.getData());
-            objectInputStream = new ObjectInputStream(byteArrayInputStream);
-            return (Message) objectInputStream.readObject();
-        } catch (NullPointerException | IOException | ClassNotFoundException | ClassCastException e) {
-            e.printStackTrace();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
         }
-        return null;
+        return deserialize(datagramPacket.getData(), datagramPacket.getLength());
     }
 }

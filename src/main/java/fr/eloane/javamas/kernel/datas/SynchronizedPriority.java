@@ -24,7 +24,6 @@
 package fr.eloane.javamas.kernel.datas;
 
 import java.io.Serializable;
-import java.util.Arrays;
 import java.util.PriorityQueue;
 
 /**
@@ -66,7 +65,7 @@ public final class SynchronizedPriority<T> extends PriorityQueue<T> implements S
      * return the fist of all object in the queue and remove it from the queue
      *
      * @return object
-     * @see pop(int wait)
+     * @see #pop(int)
      */
     public synchronized T pop() {
         return this.pop(0);
@@ -79,14 +78,20 @@ public final class SynchronizedPriority<T> extends PriorityQueue<T> implements S
      */
     public synchronized T pop(int wait) {
         try {
-            if (wait == 0) {
-                while (this.isEmpty()) {
+            long deadline = System.currentTimeMillis() + wait;
+            while (this.isEmpty()) {
+                if (wait == 0) {
                     this.wait();
+                } else {
+                    long remaining = deadline - System.currentTimeMillis();
+                    if (remaining <= 0) {
+                        break;
+                    }
+                    this.wait(remaining);
                 }
-            } else {
-                this.wait(wait);
             }
         } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
         return this.poll();
     }
@@ -103,7 +108,7 @@ public final class SynchronizedPriority<T> extends PriorityQueue<T> implements S
      * Remove all elements in the priority queue
      */
     public synchronized void flush() {
-        this.removeAll(Arrays.asList(this.toArray()));
+        this.clear();
     }
 
     /**

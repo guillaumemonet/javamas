@@ -23,7 +23,10 @@
  */
 package fr.eloane.javamas.kernel.messages;
 
+import java.io.Serial;
 import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
 
 /**
  * Original Work by the MaDKit Team : message send by Agents
@@ -141,7 +144,7 @@ public final class ACLMessage extends Message<String> {
     /**
      *
      */
-    public static final String CONFIRM_STRING = "CONFIRMP";
+    public static final String CONFIRM_STRING = "CONFIRM";
     /**
      *
      */
@@ -213,40 +216,42 @@ public final class ACLMessage extends Message<String> {
     /**
      *
      */
-    public static final ArrayList<String> PERFORMATIVES = new ArrayList<>();
+    /**
+     * The performatives, indexed by their constant
+     */
+    public static final ArrayList<String> PERFORMATIVES = new ArrayList<>(List.of(
+            ACCEPT_PROPOSAL_STRING,
+            AGREE_STRING,
+            CANCEL_STRING,
+            CFP_STRING,
+            CONFIRM_STRING,
+            DISCONFIRM_STRING,
+            FAILURE_STRING,
+            INFORM_STRING,
+            INFORM_IF_STRING,
+            INFORM_REF_STRING,
+            NOT_UNDERSTOOD_STRING,
+            PROPOSE_STRING,
+            QUERY_IF_STRING,
+            QUERY_REF_STRING,
+            REFUSE_STRING,
+            REJECT_PROPOSAL_STRING,
+            REQUEST_STRING,
+            REQUEST_WHEN_STRING,
+            REQUEST_WHENEVER_STRING,
+            SUBSCRIBE_STRING,
+            PROXY_STRING,
+            PROPAGATE_STRING));
+    @Serial
     private static final long serialVersionUID = -2112713185673830635L;
 
-    static {
-        PERFORMATIVES.add("ACCEPT-PROPOSAL");
-        PERFORMATIVES.add("AGREE");
-        PERFORMATIVES.add("CANCEL");
-        PERFORMATIVES.add("CFP");
-        PERFORMATIVES.add("CONFIRM");
-        PERFORMATIVES.add("DISCONFIRM");
-        PERFORMATIVES.add("FAILURE");
-        PERFORMATIVES.add("INFORM");
-        PERFORMATIVES.add("INFORM-IF");
-        PERFORMATIVES.add("INFORM-REF");
-        PERFORMATIVES.add("NOT-UNDERSTOOD");
-        PERFORMATIVES.add("PROPOSE");
-        PERFORMATIVES.add("QUERY-IF");
-        PERFORMATIVES.add("QUERY-REF");
-        PERFORMATIVES.add("REFUSE");
-        PERFORMATIVES.add("REJECT-PROPOSAL");
-        PERFORMATIVES.add("REQUEST");
-        PERFORMATIVES.add("REQUEST-WHEN");
-        PERFORMATIVES.add("REQUEST-WHENEVER");
-        PERFORMATIVES.add("SUBSCRIBE");
-        PERFORMATIVES.add("PROXY");
-        PERFORMATIVES.add("PROPAGATE");
-    }
     private String action;
 
     /**
      * Default constructor for ACLMessage class
      */
     public ACLMessage() {
-        action = "NOT_UNDERSTOOD_STRING";
+        action = NOT_UNDERSTOOD_STRING;
         content = "NO_CONTENT";
     }
 
@@ -256,7 +261,7 @@ public final class ACLMessage extends Message<String> {
      * @param actType the performative
      */
     public ACLMessage(String actType) {
-        action = actType.toUpperCase();
+        action = actType.toUpperCase(Locale.ROOT);
     }
 
     /**
@@ -266,7 +271,7 @@ public final class ACLMessage extends Message<String> {
      * @param cont the content of the message
      */
     public ACLMessage(String actType, String cont) {
-        action = actType.toUpperCase();
+        action = actType.toUpperCase(Locale.ROOT);
         content = cont;
     }
 
@@ -277,7 +282,7 @@ public final class ACLMessage extends Message<String> {
      * @param cont the content of the message
      */
     public ACLMessage(int perf, String cont) {
-        this.action = PERFORMATIVES.get(perf);
+        this.action = perf >= 0 && perf < PERFORMATIVES.size() ? PERFORMATIVES.get(perf) : "UNKNOWN";
         this.content = cont;
     }
 
@@ -316,6 +321,6 @@ public final class ACLMessage extends Message<String> {
      */
     @Override
     public String toString() {
-        return "" + action + " " + content;
+        return action + " " + content;
     }
 }

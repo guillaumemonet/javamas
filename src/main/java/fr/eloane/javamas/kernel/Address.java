@@ -1,4 +1,4 @@
-/* 
+/*
  * The MIT License
  *
  * Copyright 2018 Guillaume Monet.
@@ -24,33 +24,40 @@
 package fr.eloane.javamas.kernel;
 
 import java.io.Serializable;
+import java.util.Objects;
+import java.util.UUID;
 
 /**
+ * Unique address of an agent
  *
  * @author Guillaume Monet
- * @version 1.1
+ * @version 2.0
+ * @param id the unique id of the agent
  */
-public final class Address implements Serializable {
+public record Address(String id) implements Serializable {
 
-    private static final long serialVersionUID = 2767136219233842486L;
-
-    private final String id;
+    public Address {
+        Objects.requireNonNull(id);
+    }
 
     /**
-     *
+     * Create a new unique address
      */
     public Address() {
-        this.id = "A:" + ((int) (Math.random() * 1000000)) + "@" + Node.getHandle().hashCode();
-    }
-
-    @Override
-    public boolean equals(Object obj) {
-        return (obj instanceof Address) && (((Address) obj).getId().equals(this.getId()));
+        this("A:" + UUID.randomUUID());
     }
 
     /**
      *
-     * @return
+     * @return a new unique address
+     */
+    public static Address generate() {
+        return new Address();
+    }
+
+    /**
+     *
+     * @return the unique id of the agent
      */
     public String getId() {
         return id;
@@ -58,6 +65,6 @@ public final class Address implements Serializable {
 
     @Override
     public String toString() {
-        return this.getId();
+        return id;
     }
 }

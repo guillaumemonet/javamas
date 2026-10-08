@@ -1,4 +1,4 @@
-/* 
+/*
  * The MIT License
  *
  * Copyright 2018 Guillaume Monet.
@@ -23,19 +23,51 @@
  */
 package fr.eloane.javamas.kernel.probes;
 
+import java.io.Serial;
 import java.io.Serializable;
 import java.util.Observable;
 import java.util.Observer;
+import java.util.function.Consumer;
 
 /**
- * Think about something hot because it'll getting cold
+ * Observe the values published by an agent : the values of the
+ * {@link #handleProbe(Object) handled type} are received, the others are
+ * ignored.
  *
  * @author Guillaume Monet
- * @param <T>
+ * @param <T> type of the values handled by the probe
  */
+@SuppressWarnings("deprecation")
 public abstract class Probe<T> implements Serializable, Observer {
 
+    @Serial
     private static final long serialVersionUID = 7523662972689640778L;
+
+    /**
+     * Create a probe from a lambda
+     *
+     * @param <T> type of the values handled by the probe
+     * @param type class of the values handled by the probe, the others are
+     * ignored
+     * @param handler called for each value
+     * @return the probe
+     */
+    public static <T> Probe<T> of(Class<T> type, Consumer<? super T> handler) {
+        return new Probe<>() {
+            @Serial
+            private static final long serialVersionUID = 1L;
+
+            @Override
+            protected void handleProbe(T value) {
+                handler.accept(value);
+            }
+
+            @Override
+            protected boolean accept(Object value) {
+                return type.isInstance(value);
+            }
+        };
+    }
 
     /**
      *
@@ -43,12 +75,25 @@ public abstract class Probe<T> implements Serializable, Observer {
      * @param arg
      */
     @Override
+    @SuppressWarnings("unchecked")
     public final void update(Observable o, Object arg) {
+        if (!accept(arg)) {
+            return;
+        }
         try {
             this.handleProbe((T) arg);
         } catch (ClassCastException e) {
+            // The value is not of the handled type
         }
+    }
 
+    /**
+     *
+     * @param value value published by the agent
+     * @return if the value must be handled
+     */
+    protected boolean accept(Object value) {
+        return true;
     }
 
     /**
@@ -56,5 +101,4 @@ public abstract class Probe<T> implements Serializable, Observer {
      * @param value
      */
     protected abstract void handleProbe(T value);
-
 }

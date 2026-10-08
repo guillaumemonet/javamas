@@ -23,19 +23,27 @@
  */
 package fr.eloane.javamas.kernel.sensors;
 
+import java.io.Serial;
 import java.util.ArrayList;
 import java.util.Observer;
 
 /**
+ * Sensors of an agent
  *
  * @author Guillaume Monet
  */
+@SuppressWarnings({"rawtypes", "deprecation"})
 public class SensorsManager extends ArrayList<Sensor> {
 
+    @Serial
     private static final long serialVersionUID = 1L;
 
     private final Observer observer;
 
+    /**
+     *
+     * @param observer notified when the value of a sensor changes
+     */
     public SensorsManager(Observer observer) {
         this.observer = observer;
     }
@@ -45,10 +53,9 @@ public class SensorsManager extends ArrayList<Sensor> {
      *
      * @param sensor
      */
-    public final void addSensor(Sensor<?> sensor) {
+    public final synchronized void addSensor(Sensor<?> sensor) {
         sensor.addObserver(observer);
         this.add(sensor);
-
     }
 
     /**
@@ -56,7 +63,7 @@ public class SensorsManager extends ArrayList<Sensor> {
      *
      * @param sensor
      */
-    public final void removeSensor(Sensor<?> sensor) {
+    public final synchronized void removeSensor(Sensor<?> sensor) {
         sensor.deleteObserver(observer);
         this.remove(sensor);
     }
@@ -64,10 +71,8 @@ public class SensorsManager extends ArrayList<Sensor> {
     /**
      * Remove all the sensors
      */
-    public final void flushSensors() {
-        this.forEach((sens) -> {
-            sens.deleteObserver(observer);
-        });
-        this.removeAll(this);
+    public final synchronized void flushSensors() {
+        this.forEach(sens -> sens.deleteObserver(observer));
+        this.clear();
     }
 }

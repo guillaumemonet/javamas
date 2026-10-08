@@ -1,4 +1,4 @@
-/* 
+/*
  * The MIT License
  *
  * Copyright 2018 Guillaume Monet.
@@ -23,32 +23,48 @@
  */
 package fr.eloane.javamas.kernel.utils;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.Properties;
 
 /**
  *
  * @author guillaume
- * @version 1.1.0
+ * @version 2.0.0
  */
 public final class ConfigUtils {
 
+    private static final System.Logger LOGGER = System.getLogger(ConfigUtils.class.getName());
+
     /**
-     *
+     * The loaded configuration, null until {@link #loadConfig()} is called
      */
     public static Properties prop = null;
 
     /**
+     * Load the config.properties resource
      *
-     * @return
+     * @return if the configuration was loaded
      */
     public static boolean loadConfig() {
         prop = new Properties();
-        try {
-            prop.load(ConfigUtils.class.getResourceAsStream("config.properties"));
+        try (InputStream in = ConfigUtils.class.getResourceAsStream("config.properties")) {
+            if (in == null) {
+                return false;
+            }
+            prop.load(in);
             return true;
-        } catch (Exception e) {
-            e.printStackTrace();
+        } catch (IOException e) {
+            LOGGER.log(System.Logger.Level.WARNING, "Can't load config.properties", e);
             return false;
         }
+    }
+
+    /**
+     *
+     * @return the loaded configuration
+     */
+    public static Properties getProperties() {
+        return prop;
     }
 }

@@ -1,4 +1,4 @@
-/* 
+/*
  * The MIT License
  *
  * Copyright 2018 Guillaume Monet.
@@ -23,10 +23,11 @@
  */
 package fr.eloane.javamas.kernel;
 
+import fr.eloane.javamas.kernel.messages.Message;
+import java.io.Serial;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.Map.Entry;
-import fr.eloane.javamas.kernel.messages.Message;
+import java.util.Objects;
 
 /**
  * Knowledge of the agent : Messages history
@@ -35,25 +36,19 @@ import fr.eloane.javamas.kernel.messages.Message;
  */
 public class AgentHistory extends ArrayList<Message<?>> {
 
+    @Serial
     private static final long serialVersionUID = 968563573046293L;
 
     /**
      *
-     * @param conditions
-     * @return
+     * @param conditions fields values the messages must have
+     * @return copies of the messages matching all the conditions
      */
-    public ArrayList<Message> getMessages(HashMap<String, String> conditions) {
+    @SuppressWarnings("rawtypes")
+    public synchronized ArrayList<Message> getMessages(HashMap<String, String> conditions) {
         ArrayList<Message> ret = new ArrayList<>();
-        for (Message mes : this) {
-            boolean ok = false;
-            for (Entry ent : conditions.entrySet()) {
-                if (mes.get(ent.getKey()) != null && mes.get(ent.getKey()).equals(ent.getValue())) {
-                    ok = true;
-                } else {
-                    break;
-                }
-            }
-            if (ok) {
+        for (Message<?> mes : this) {
+            if (conditions.entrySet().stream().allMatch(ent -> Objects.equals(mes.get(ent.getKey()), ent.getValue()))) {
                 ret.add(mes.clone());
             }
         }
@@ -62,9 +57,9 @@ public class AgentHistory extends ArrayList<Message<?>> {
 
     /**
      *
-     * @param mes
+     * @param mes message to store in the history
      */
-    public void putMessage(Message mes) {
+    public synchronized void putMessage(Message<?> mes) {
         this.add(mes.clone());
     }
 }

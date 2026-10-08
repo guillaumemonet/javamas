@@ -1,4 +1,4 @@
-/* 
+/*
  * The MIT License
  *
  * Copyright 2018 Guillaume Monet.
@@ -23,29 +23,36 @@
  */
 package fr.eloane.javamas.kernel.datas;
 
+import java.io.IOException;
+import java.io.ObjectOutputStream;
+import java.io.Serial;
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Objects;
 
 /**
- * Tree Collection : Each elements must be unique
+ * Tree Collection : the children of a node are unique.<br />
+ * Safe for concurrent reads and writes.
  *
  * @author Guillaume Monet
  * @param <T>
  */
 public class SynchronizedTree<T> implements Serializable {
 
+    @Serial
     private static final long serialVersionUID = -1075077374642499790L;
 
-    private T root;
-    private ArrayList<SynchronizedTree<T>> childs;
-    private double weight = 0;
+    private final T root;
+    // ArrayList (guarded by this) keeps the serialized form of previous versions
+    private final ArrayList<SynchronizedTree<T>> childs = new ArrayList<>();
+    private volatile double weight = 0;
 
     /**
      *
      */
     public SynchronizedTree() {
-        this.childs = new ArrayList<>();
-        this.root = null;
+        this(null);
     }
 
     /**
@@ -53,32 +60,37 @@ public class SynchronizedTree<T> implements Serializable {
      * @param element
      */
     public SynchronizedTree(T element) {
-        this();
         this.root = element;
     }
 
     /**
+     * Add a child, if a child with the same element already exists it is
+     * returned
      *
      * @param element
-     * @return
+     * @return the child tree
      */
-    public synchronized SynchronizedTree<T> addNode(T element) {
+    public SynchronizedTree<T> addNode(T element) {
         return this.addNode(element, 0);
     }
 
     /**
+     * Add a child, if a child with the same element already exists it is
+     * returned
      *
      * @param element
      * @param weight
-     * @return
+     * @return the child tree
      */
     public synchronized SynchronizedTree<T> addNode(T element, double weight) {
-        SynchronizedTree t = new SynchronizedTree(element);
-        t.setWeight(weight);
-        if (!childs.contains(t)) {
-            childs.add(t);
+        SynchronizedTree<T> existing = this.getChild(element);
+        if (existing != null) {
+            return existing;
         }
-        return childs.get(childs.indexOf(t));
+        SynchronizedTree<T> t = new SynchronizedTree<>(element);
+        t.setWeight(weight);
+        childs.add(t);
+        return t;
     }
 
     /**
@@ -108,58 +120,71 @@ public class SynchronizedTree<T> implements Serializable {
     }
 
     /**
+     * Remove all the nodes with this element in the tree
      *
      * @param element
      */
-    public synchronized void removeNode(T element) {
-        childs.stream().filter((t) -> (t != null)).forEachOrdered((t) -> {
-            if (t.getRoot().equals(element)) {
-                t = null;
-            } else {
-                if (!t.isLeaf()) {
-                    t.removeNode(element);
-                }
-            }
-        });
+    public void removeNode(T element) {
+        this.removeChild(element);
+        this.getChilds().forEach(t -> t.removeNode(element));
+    }
+
+    /**
+     * Remove the direct child with this element
+     *
+     * @param element
+     */
+    public synchronized void removeChild(T element) {
+        childs.removeIf(t -> Objects.equals(t.getRoot(), element));
     }
 
     /**
      *
      * @param element
-     * @return
+     * @return the direct child with this element or null
      */
-    public synchronized SynchronizedTree<T> getTree(T element) {
-        if (root.equals(element)) {
-            return this;
-        } else {
-            SynchronizedTree found = null;
-            for (SynchronizedTree t : this.childs) {
-                found = t.getTree(element);
-                if (found != null) {
-                    break;
-                }
+    public synchronized SynchronizedTree<T> getChild(T element) {
+        for (SynchronizedTree<T> t : childs) {
+            if (Objects.equals(t.getRoot(), element)) {
+                return t;
             }
-            return found;
         }
+        return null;
     }
 
     /**
      *
-     * @return
+     * @param element
+     * @return the first sub tree (depth first) with this element or null
      */
-    public ArrayList<SynchronizedTree<T>> getChilds() {
-        return this.childs;
+    public SynchronizedTree<T> getTree(T element) {
+        if (Objects.equals(root, element)) {
+            return this;
+        }
+        for (SynchronizedTree<T> t : this.getChilds()) {
+            SynchronizedTree<T> found = t.getTree(element);
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
     }
 
     /**
      *
-     * @return
+     * @return a copy of the direct children
      */
-    public ArrayList<T> getChildsAsList() {
+    public synchronized ArrayList<SynchronizedTree<T>> getChilds() {
+        return new ArrayList<>(this.childs);
+    }
+
+    /**
+     *
+     * @return the elements of the direct children
+     */
+    public synchronized ArrayList<T> getChildsAsList() {
         ArrayList<T> ret = new ArrayList<>();
-        this.childs.forEach((t) -> {
-            ret.add(t.getRoot());
-        });
+        this.childs.forEach(t -> ret.add(t.getRoot()));
         return ret;
     }
 
@@ -170,32 +195,26 @@ public class SynchronizedTree<T> implements Serializable {
      * @return
      */
     public boolean contains(T element) {
-        return this.childs.stream().anyMatch((t) -> (t.getRoot().equals(element)));
+        return this.getChild(element) != null;
     }
 
     /**
      *
      * @param tree
-     * @return
+     * @return if this tree has the same root and contains all the branches of
+     * the other tree
      */
     public boolean compare(SynchronizedTree<T> tree) {
-        if (this.getRoot().equals(tree.getRoot())) {
-            if (tree.isLeaf()) {
-                return true;
-            }
-
-            boolean ret = true;
-            for (SynchronizedTree<T> subtree : tree.getChilds()) {
-                if (this.contains(subtree.getRoot())) {
-                    ret &= this.getTree(subtree.getRoot()).compare(subtree);
-                } else {
-                    ret = false;
-                    break;
-                }
-            }
-            return ret;
+        if (!Objects.equals(this.getRoot(), tree.getRoot())) {
+            return false;
         }
-        return false;
+        for (SynchronizedTree<T> subtree : tree.getChilds()) {
+            SynchronizedTree<T> child = this.getChild(subtree.getRoot());
+            if (child == null || !child.compare(subtree)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
@@ -209,27 +228,47 @@ public class SynchronizedTree<T> implements Serializable {
     /**
      *
      * @param element
-     * @return
+     * @return the elements from the root to the element, empty if the element
+     * is not in the tree
      */
     public ArrayList<T> getPath(T element) {
-        return null;
+        ArrayList<T> path = new ArrayList<>();
+        if (this.buildPath(element, path)) {
+            Collections.reverse(path);
+        }
+        return path;
+    }
+
+    private boolean buildPath(T element, ArrayList<T> path) {
+        boolean found = Objects.equals(root, element);
+        for (SynchronizedTree<T> t : this.getChilds()) {
+            if (found) {
+                break;
+            }
+            found = t.buildPath(element, path);
+        }
+        if (found) {
+            path.add(root);
+        }
+        return found;
     }
 
     /**
      *
      * @return
      */
-    public boolean isLeaf() {
+    public synchronized boolean isLeaf() {
         return this.childs.isEmpty();
     }
 
     @Override
     public boolean equals(Object obj) {
-        if (obj instanceof SynchronizedTree) {
-            return ((SynchronizedTree) obj).root == this.root;
-        } else {
-            return false;
-        }
+        return obj instanceof SynchronizedTree<?> tree && Objects.equals(tree.root, this.root);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hashCode(root);
     }
 
     /**
@@ -238,16 +277,21 @@ public class SynchronizedTree<T> implements Serializable {
      * @return
      */
     public String print(String prepend) {
-        prepend = " " + prepend;
-        String ret = "" + root;
-        for (SynchronizedTree t : childs) {
-            ret += "\n" + prepend + t.print(prepend);
+        String indent = " " + prepend;
+        StringBuilder ret = new StringBuilder(String.valueOf(root));
+        for (SynchronizedTree<T> t : this.getChilds()) {
+            ret.append('\n').append(indent).append(t.print(indent));
         }
-        return ret;
+        return ret.toString();
     }
 
     @Override
     public String toString() {
         return print("-");
+    }
+
+    @Serial
+    private synchronized void writeObject(ObjectOutputStream out) throws IOException {
+        out.defaultWriteObject();
     }
 }

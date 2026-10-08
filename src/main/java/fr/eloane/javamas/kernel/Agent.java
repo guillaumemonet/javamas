@@ -1,4 +1,4 @@
-/* 
+/*
  * The MIT License
  *
  * Copyright 2018 Guillaume Monet.
@@ -23,43 +23,59 @@
  */
 package fr.eloane.javamas.kernel;
 
-import fr.eloane.javamas.kernel.probes.Probe;
-import fr.eloane.javamas.kernel.sensors.Sensor;
-import java.io.Serializable;
-import java.util.ArrayList;
 import fr.eloane.javamas.kernel.messages.Message;
-import fr.eloane.javamas.kernel.datas.SynchronizedPriority;
 import fr.eloane.javamas.kernel.organization.Organization;
 import fr.eloane.javamas.kernel.probes.ProbesManager;
 import fr.eloane.javamas.kernel.sensors.SensorsManager;
+import java.io.Serial;
+import java.io.Serializable;
+import java.util.concurrent.PriorityBlockingQueue;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  *
  * @author Guillaume Monet
- * @param <T>
+ * @param <T> type of the values stored in the agent's database
  */
 public abstract class Agent<T> extends AbstractAgent implements Serializable {
 
+    @Serial
     private static final long serialVersionUID = -3591756155645176746L;
 
-    private Address address;
+    /**
+     * Description of the probe value published when the messages queue changes
+     */
+    public static final String MESSAGES_QUEUE_PROBE = "MESSAGES QUEUE";
+
+    /**
+     * Message waiting in the queue, ordered by priority then by arrival
+     */
+    private record QueuedMessage(Message<?> message, long sequence) implements Comparable<QueuedMessage>, Serializable {
+
+        @Override
+        public int compareTo(QueuedMessage other) {
+            int priority = Integer.compare(other.message.getPriority(), this.message.getPriority());
+            return priority != 0 ? priority : Long.compare(this.sequence, other.sequence);
+        }
+    }
+
+    private final Address address;
     private final SensorsManager sensorsManager = new SensorsManager(this);
     private final ProbesManager probesManager = new ProbesManager(this);
-
-    private final ArrayList<Sensor<?>> sensors = new ArrayList<>();
-    private final ArrayList<Probe> probes = new ArrayList<>();
-    private final SynchronizedPriority<Message<?>> messages = new SynchronizedPriority<>();
-    private final Organization grmanager = new Organization();
+    private final PriorityBlockingQueue<QueuedMessage> messages = new PriorityBlockingQueue<>();
+    private final AtomicLong messageSequence = new AtomicLong();
+    private final Organization organization = new Organization();
     private final Scheduler scheduler = new Scheduler();
-    private final Database<T> database = null;
+    private Database<T> database = null;
     private String name = "";
-    
 
     /**
      * Create new Agent
      */
+    @SuppressWarnings("this-escape")
     public Agent() {
-        this.address = new Address();
+        this.address = Address.generate();
         this.register();
     }
 
@@ -109,8 +125,6 @@ public abstract class Agent<T> extends AbstractAgent implements Serializable {
         Node.getHandle().unregister(this);
     }
 
-    
-
     /**
      * Kill de agent
      */
@@ -118,9 +132,14 @@ public abstract class Agent<T> extends AbstractAgent implements Serializable {
     protected void kill() {
         this.unregister();
         this.flushMessage();
-        this.getProbesManager().flushProbes();
-        this.getSensorsManager().flushSensors();
+        this.probesManager.flushProbes();
+        this.sensorsManager.flushSensors();
         this.scheduler.stop();
+    }
+
+    @Override
+    protected String threadName() {
+        return (name.isEmpty() ? getClass().getSimpleName() : name) + "-" + address;
     }
 
     /**
@@ -142,7 +161,7 @@ public abstract class Agent<T> extends AbstractAgent implements Serializable {
      * @see #stop()
      * @see #resume()
      * @see #pause()
-     * @param time
+     * @param time pause duration in milliseconds
      */
     public final void pause(long time) {
         this.scheduler.pause(time);
@@ -180,7 +199,7 @@ public abstract class Agent<T> extends AbstractAgent implements Serializable {
      * @see #pause(long)
      * @see #stop()
      * @see #resume()
-     * @param delay
+     * @param delay delay in milliseconds
      */
     public final void setDelay(int delay) {
         this.scheduler.setDelay(delay);
@@ -190,11 +209,11 @@ public abstract class Agent<T> extends AbstractAgent implements Serializable {
      * Wait, Stop , Continue the Agent's life cycle<br />
      * Must be use in live() method
      *
-     * @see setDelay()
-     * @see pause()
-     * @see stop()
-     * @see resume()
-     * @see live()
+     * @see #setDelay(int)
+     * @see #pause()
+     * @see #stop()
+     * @see #resume()
+     * @see #live()
      * @return if life cycle can proceed
      */
     public final boolean nextStep() {
@@ -211,24 +230,16 @@ public abstract class Agent<T> extends AbstractAgent implements Serializable {
     }
 
     /**
-     * launch an other agent synchroneous
+     * launch an other agent
      *
      * @param agt the Agent to launch
      * @param async if it's asynchroneous or not
      */
     public final void launchAgent(Agent<?> agt, boolean async) {
-        try {
-            if (async) {
-                agt.start();
-            } else {
-                agt.init();
-                agt.activate();
-                agt.live();
-                agt.end();
-                agt.kill();
-            }
-        } catch (Exception er) {
-            er.printStackTrace();
+        if (async) {
+            agt.start();
+        } else {
+            agt.run();
         }
     }
 
@@ -246,7 +257,7 @@ public abstract class Agent<T> extends AbstractAgent implements Serializable {
     /**
      * wait until receive a message
      *
-     * @return a message
+     * @return a message or null if the agent's thread is interrupted
      */
     public final Message<?> waitNextMessage() {
         return this.waitNextMessage(0);
@@ -255,13 +266,18 @@ public abstract class Agent<T> extends AbstractAgent implements Serializable {
     /**
      * wait until receive a message or until time
      *
-     * @param until time to wait
-     * @return a message
+     * @param until time to wait in milliseconds, 0 to wait forever
+     * @return a message or null if no message was received in time
      */
     public final Message<?> waitNextMessage(int until) {
-        Message<?> mess = messages.pop(until);
-        this.notifyMessagesChanged();
-        return mess;
+        try {
+            QueuedMessage queued = until <= 0 ? messages.take() : messages.poll(until, TimeUnit.MILLISECONDS);
+            this.notifyMessagesChanged();
+            return queued == null ? null : queued.message();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return null;
+        }
     }
 
     /**
@@ -270,7 +286,7 @@ public abstract class Agent<T> extends AbstractAgent implements Serializable {
      * @param mes
      */
     public final void pushMessage(Message<?> mes) {
-        messages.push(mes);
+        messages.put(new QueuedMessage(mes, messageSequence.getAndIncrement()));
         this.notifyMessagesChanged();
     }
 
@@ -278,17 +294,23 @@ public abstract class Agent<T> extends AbstractAgent implements Serializable {
      * Remove all messages from queue
      */
     public final void flushMessage() {
-        messages.flush();
+        messages.clear();
         this.notifyMessagesChanged();
     }
 
-    /**
-     *
-     */
     private void notifyMessagesChanged() {
+        this.probe(MESSAGES_QUEUE_PROBE, this.countMessages());
+    }
+
+    /**
+     * Publish a value to all the probes of the agent
+     *
+     * @param description description of the value
+     * @param value the value
+     */
+    protected final void probe(String description, Object value) {
         this.setChanged();
-        AgentProbeValue<Integer> p = new AgentProbeValue<>("MESSAGES QUEUE", this.countMessages());
-        this.notifyObservers(p);
+        this.notifyObservers(new AgentProbeValue<>(description, value));
     }
 
     /**
@@ -300,39 +322,43 @@ public abstract class Agent<T> extends AbstractAgent implements Serializable {
         return messages.size();
     }
 
-    public Database getDatabase() {
+    /**
+     * The agent's persistent database, stored in the user's home and named
+     * after the agent's name (or class name if no name is set).
+     *
+     * @return the database, created and loaded on first call
+     */
+    public synchronized Database<T> getDatabase() {
+        if (this.database == null) {
+            this.database = new Database<>(name.isEmpty() ? getClass().getName() : name, true);
+        }
         return this.database;
     }
 
     /**
-     * print something in current output or in the gui if is defined
+     * print something in current output
      *
      * @param str something to print
      */
     public final void println(Object str) {
-        try {
-            System.out.println(this.name + this.address.toString() + ":" + str);
-        } catch (NullPointerException e) {
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+        System.out.println(this.name + this.address + ":" + str);
     }
 
     /**
      *
-     * @return
+     * @return the organization (communities, groups, roles) of the agent
      */
     public final Organization getOrganization() {
-        return this.grmanager;
+        return this.organization;
     }
 
     /**
      *
      * @param organization
-     * @return
+     * @return if the agent is part of the organization
      */
     public final boolean isInOrganization(Organization organization) {
-        return this.grmanager.compare(organization);
+        return this.organization.compare(organization);
     }
 
     /**

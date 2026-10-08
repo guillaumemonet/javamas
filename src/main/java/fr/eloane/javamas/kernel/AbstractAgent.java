@@ -24,17 +24,24 @@
 package fr.eloane.javamas.kernel;
 
 import fr.eloane.javamas.kernel.sensors.Sensor;
+import java.io.Serial;
 import java.io.Serializable;
 import java.util.Observable;
 import java.util.Observer;
 
 /**
+ * Life cycle of an agent : init, activate, live, end, kill.<br />
+ * The agent is observable by its probes and observes its sensors.
  *
  * @author Guillaume Monet
  */
+@SuppressWarnings("deprecation")
 public abstract class AbstractAgent extends Observable implements Serializable, Observer, Runnable {
 
+    @Serial
     private static final long serialVersionUID = -4353825708388962018L;
+
+    private static final System.Logger LOGGER = System.getLogger(AbstractAgent.class.getName());
 
     protected transient boolean daemon = false;
 
@@ -45,7 +52,7 @@ public abstract class AbstractAgent extends Observable implements Serializable, 
     }
 
     /**
-     *
+     * Activation of the agent : join organizations, add sensors...
      */
     protected abstract void activate();
 
@@ -60,23 +67,41 @@ public abstract class AbstractAgent extends Observable implements Serializable, 
     protected abstract void end();
 
     /**
-     *
+     * Reset the agent if it needs to be reused
      */
     protected void reset() {
-
-    }
-
-    protected void kill() {
-
     }
 
     /**
-     * Start the life cycle
+     * Destroy the agent
+     */
+    protected void kill() {
+    }
+
+    /**
+     * Start the life cycle in a new platform thread
      */
     public final void start() {
-        Thread th = new Thread(this);
-        th.setDaemon(daemon);
-        th.start();
+        Thread.ofPlatform().name(threadName()).daemon(daemon).start(this);
+    }
+
+    /**
+     * Start the life cycle in a new virtual thread.<br />
+     * Virtual threads are cheap and allow a huge number of agents, but they do
+     * not keep the JVM alive.
+     *
+     * @return the thread running the agent
+     */
+    public final Thread startVirtual() {
+        return Thread.ofVirtual().name(threadName()).start(this);
+    }
+
+    /**
+     *
+     * @return the name of the thread running the agent
+     */
+    protected String threadName() {
+        return getClass().getSimpleName();
     }
 
     /**
@@ -84,21 +109,26 @@ public abstract class AbstractAgent extends Observable implements Serializable, 
      */
     @Override
     public final void run() {
-        this.init();
-        this.activate();
-        this.live();
-        this.end();
-        this.kill();
+        try {
+            this.init();
+            this.activate();
+            this.live();
+            this.end();
+        } catch (RuntimeException e) {
+            LOGGER.log(System.Logger.Level.ERROR, "Agent " + threadName() + " failed", e);
+        } finally {
+            this.kill();
+        }
     }
 
     /**
-     * Method to override if sensors want to be handled Handle trigger of the
-     * sensor (pattern observer is used)
+     * Method to override if sensors want to be handled.<br />
+     * Called each time the value of a sensor added to the agent changes.
      *
      * @param sensor sensor that trigger the event
      */
     protected void handleSensor(Sensor<?> sensor) {
-        System.out.println(sensor.getValue().toString());
+        LOGGER.log(System.Logger.Level.DEBUG, () -> threadName() + " sensor " + sensor.getType() + " : " + sensor.getValue());
     }
 
     /**
@@ -106,12 +136,12 @@ public abstract class AbstractAgent extends Observable implements Serializable, 
      *
      * @param o observable that trigger the update event
      * @param arg
-     * @throws ClassCastException
+     * @throws ClassCastException if the observable is not a sensor
      */
     @Override
     public final void update(Observable o, Object arg) throws ClassCastException {
-        if (o instanceof Sensor<?>) {
-            handleSensor((Sensor<?>) o);
+        if (o instanceof Sensor<?> sensor) {
+            handleSensor(sensor);
         } else {
             throw new ClassCastException("Can't cast " + o.getClass() + " to " + Sensor.class);
         }

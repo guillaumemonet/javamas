@@ -1,4 +1,4 @@
-/* 
+/*
  * The MIT License
  *
  * Copyright 2018 Guillaume Monet.
@@ -27,46 +27,34 @@ import fr.eloane.javamas.kernel.messages.Message;
 import java.util.HashMap;
 
 /**
+ * Not implemented yet
  *
  * @author Guillaume Monet
  */
 public class TransportTCP extends Transport {
 
-    
-    
-    
+    /**
+     *
+     * @param parameters
+     * @throws UnsupportedOperationException always, TCP is not implemented yet
+     */
     public TransportTCP(HashMap<String, String> parameters) {
         super(parameters);
-       
-        
+        throw new UnsupportedOperationException("TCP transport is not implemented yet");
     }
 
-    
-
-    /**
-     *
-     * @param mess
-     */
     @Override
     public void sendMessage(Message<?> mess) {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+        throw new UnsupportedOperationException("TCP transport is not implemented yet");
     }
 
-    /**
-     *
-     */
     @Override
     public void kill() {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
     }
 
-    /**
-     *
-     * @return
-     */
     @Override
-    public Message waitMessage() {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    public Message<?> waitMessage() {
+        throw new UnsupportedOperationException("TCP transport is not implemented yet");
     }
 
 }

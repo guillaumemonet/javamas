@@ -23,20 +23,28 @@
  */
 package fr.eloane.javamas.kernel.probes;
 
+import java.io.Serial;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Observable;
 
 /**
+ * Probes of an agent
  *
  * @author Guillaume Monet
  */
+@SuppressWarnings({"rawtypes", "deprecation"})
 public class ProbesManager extends ArrayList<Probe> implements Serializable {
 
+    @Serial
     private static final long serialVersionUID = -5675257949050206130L;
 
     private final Observable observable;
 
+    /**
+     *
+     * @param observable the observed agent
+     */
     public ProbesManager(Observable observable) {
         this.observable = observable;
     }
@@ -46,7 +54,7 @@ public class ProbesManager extends ArrayList<Probe> implements Serializable {
      *
      * @param obs
      */
-    public final void addProbe(Probe obs) {
+    public final synchronized void addProbe(Probe obs) {
         this.observable.addObserver(obs);
         this.add(obs);
     }
@@ -56,7 +64,7 @@ public class ProbesManager extends ArrayList<Probe> implements Serializable {
      *
      * @param probe
      */
-    public final void removeProbe(Probe probe) {
+    public final synchronized void removeProbe(Probe probe) {
         this.observable.deleteObserver(probe);
         this.remove(probe);
     }
@@ -64,9 +72,9 @@ public class ProbesManager extends ArrayList<Probe> implements Serializable {
     /**
      * Remove all probes
      */
-    public final void flushProbes() {
+    public final synchronized void flushProbes() {
         this.observable.deleteObservers();
-        this.removeAll(this);
+        this.clear();
     }
 
     /**

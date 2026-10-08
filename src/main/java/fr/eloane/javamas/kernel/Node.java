@@ -1,4 +1,4 @@
-/* 
+/*
  * The MIT License
  *
  * Copyright 2018 Guillaume Monet.
@@ -23,28 +23,61 @@
  */
 package fr.eloane.javamas.kernel;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Observable;
-import java.util.Observer;
 import fr.eloane.javamas.kernel.messages.Message;
 import fr.eloane.javamas.kernel.transport.Transport;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Observable;
+import java.util.Observer;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
+ * Local node : registry of the agents of the JVM, routes messages to local
+ * agents and to the other nodes through the transports.
  *
  * @author Guillaume Monet
  */
+@SuppressWarnings("deprecation")
 public final class Node implements Observer {
 
+    private static final System.Logger LOGGER = System.getLogger(Node.class.getName());
+
+    /**
+     * Number of message ids remembered to avoid delivering a message twice
+     */
+    private static final int MAX_SEEN_MESSAGES = 10000;
+
     private static Node comm = null;
-    private final HashMap<String, Agent<?>> agents = new HashMap<>();
-    private final ArrayList<Transport> transports = new ArrayList<>();
-    private ArrayList<String> messageIds = new ArrayList<>();
+    private final Map<String, Agent<?>> agents = new ConcurrentHashMap<>();
+    private final List<Transport> transports = new CopyOnWriteArrayList<>();
+    private final Set<String> seenMessageIds = Collections.synchronizedSet(Collections.newSetFromMap(new LinkedHashMap<String, Boolean>() {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<String, Boolean> eldest) {
+            return size() > MAX_SEEN_MESSAGES;
+        }
+    }));
 
     private Node() {
     }
 
     /**
+     *
+     * @return the node of the JVM, created if needed
+     */
+    public static synchronized Node getHandle() {
+        if (comm == null) {
+            comm = new Node();
+        }
+        return comm;
+    }
+
+    /**
+     * Add and start a transport to exchange messages with other nodes
      *
      * @param t
      */
@@ -65,25 +98,14 @@ public final class Node implements Observer {
 
     /**
      *
-     * @return
-     */
-    public static Node getHandle() {
-        if (comm == null) {
-            comm = new Node();
-            comm.start();
-        }
-        return comm;
-    }
-
-    /**
-     *
      * @param agt
      */
-    public synchronized void register(Agent<?> agt) {
+    public void register(Agent<?> agt) {
         agents.put(agt.getAddress().getId(), agt);
     }
 
     /**
+     * Unregister an agent, the node is stopped when there is no more agent
      *
      * @param agt
      */
@@ -91,52 +113,48 @@ public final class Node implements Observer {
         agents.remove(agt.getAddress().getId());
         if (agents.isEmpty()) {
             stop();
-            Node.comm = null;
-            System.out.println("Node Killed");
+            synchronized (Node.class) {
+                if (Node.comm == this) {
+                    Node.comm = null;
+                }
+            }
+            LOGGER.log(System.Logger.Level.DEBUG, "Node killed");
         }
     }
 
     /**
      *
      */
-    public synchronized void pauseAll() {
-        agents.values().forEach((a) -> {
-            a.pause();
-        });
+    public void pauseAll() {
+        agents.values().forEach(Agent::pause);
     }
 
     /**
      *
      */
-    public synchronized void resumeAll() {
-        agents.values().forEach((a) -> {
-            a.resume();
-        });
+    public void resumeAll() {
+        agents.values().forEach(Agent::resume);
     }
 
     /**
      *
      */
-    public synchronized void stopAll() {
-        agents.values().forEach((a) -> {
-            a.stop();
-        });
+    public void stopAll() {
+        agents.values().forEach(Agent::stop);
     }
 
     /**
      *
      * @param delay
      */
-    public synchronized void setDelayAll(int delay) {
-        agents.values().forEach((a) -> {
-            a.setDelay(delay);
-        });
+    public void setDelayAll(int delay) {
+        agents.values().forEach(a -> a.setDelay(delay));
     }
 
     /**
      *
      * @param id
-     * @return
+     * @return the agent or null if no agent has this id on the node
      */
     public Agent<?> getAgent(String id) {
         return agents.get(id);
@@ -144,73 +162,62 @@ public final class Node implements Observer {
 
     /**
      *
+     * @return the agents registered on the node
+     */
+    public Collection<Agent<?>> getAgents() {
+        return Collections.unmodifiableCollection(agents.values());
+    }
+
+    /**
+     * Deliver a message to the local agents (receivers and members of the
+     * organizations) and broadcast it to the other nodes
+     *
      * @param mes
      */
-    public synchronized void sendMessage(Message<?> mes) {
-        if (mes.getReceivers().size() > 0) {
-            mes.getReceivers().forEach((id) -> {
-                if (agents.containsKey(id)) {
-                    agents.get(id).pushMessage(mes);
-                }
-            });
-        }
-        if (mes.getOrganizations().size() > 0) {
-            mes.getOrganizations().forEach((organisation) -> {
-                this.agents.values().stream().filter((agent) -> (agent.isInOrganization(organisation) && !agent.getAddress().getId().equals(mes.getSender()))).forEachOrdered((agent) -> {
-                    agent.pushMessage(mes);
-                });
-            });
-        }
+    public void sendMessage(Message<?> mes) {
+        // Remember our own messages so they are not delivered again when a
+        // transport loops them back (multicast loopback, relay by other nodes)
+        this.seenMessageIds.add(mes.getId());
+        mes.getReceivers().forEach(id -> {
+            Agent<?> agent = agents.get(id);
+            if (agent != null) {
+                agent.pushMessage(mes);
+            }
+        });
+        mes.getOrganizations().forEach(organisation
+                -> agents.values().stream()
+                        .filter(agent -> agent.isInOrganization(organisation) && !agent.getAddress().getId().equals(mes.getSender()))
+                        .forEach(agent -> agent.pushMessage(mes)));
         this.broadcastMessage(mes);
     }
 
-    /**
-     *
-     * @param mes
-     */
     private void broadcastMessage(Message<?> mes) {
-        transports.forEach((Transport t) -> {
-            t.sendMessage(mes);
-        });
+        transports.forEach(t -> t.sendMessage(mes));
     }
 
     /**
-     *
+     * Nothing to do, the node is started on creation
      */
     public void start() {
-        //(new Thread(this)).start();
     }
 
     /**
-     *
+     * Close all the transports
      */
     public void stop() {
-        this.kill();
+        transports.forEach(Transport::close);
     }
 
     /**
+     * Message received by a transport
      *
+     * @param o the transport
+     * @param arg the message
      */
-    private void kill() {
-        transports.forEach((t) -> {
-            t.close();
-        });
-    }
-
     @Override
     public void update(Observable o, Object arg) {
-        if (arg instanceof Message) {
-            Message mes = (Message) arg;
-            if (!this.messageIds.contains(mes.getId())) {
-                this.messageIds.add(mes.getId());
-                this.sendMessage((Message) arg);
-            }
+        if (arg instanceof Message<?> mes && this.seenMessageIds.add(mes.getId())) {
+            this.sendMessage(mes);
         }
     }
-
-    @Override
-    public int hashCode() {
-        return (int) (Math.random() * 1000000);
-    }
-
 }
