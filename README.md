@@ -2,8 +2,6 @@
 
 ## Java Multi-Agents System
 
-[![build](https://github.com/guillaumemonet/javamas/actions/workflows/build.yml/badge.svg)](https://github.com/guillaumemonet/javamas/actions/workflows/build.yml)
-
 JavaMAS was written in 2003 for a research paper at the LESTER laboratory, and
 modernized in 2026 (Java 21, Gradle, new API).
 
