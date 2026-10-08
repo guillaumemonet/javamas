@@ -99,6 +99,46 @@ public class Message<T> implements Serializable, Cloneable {
     }
 
     /**
+     * Rebuild a message from its envelope, e.g. received from the network
+     *
+     * @param envelope
+     * @param content
+     */
+    protected Message(Envelope envelope, T content) {
+        this.id = envelope.id();
+        this.created = envelope.created();
+        this.conversationId = envelope.conversationId();
+        this.sender = envelope.sender();
+        this.receivers.addAll(envelope.receivers());
+        this.targets.addAll(envelope.targets());
+        this.priority = envelope.priority();
+        this.expiresAt = envelope.expiresAt();
+        this.ttl = envelope.ttl();
+        this.headers.putAll(envelope.headers());
+        this.content = content;
+    }
+
+    /**
+     * Rebuild a message from its envelope, e.g. received from the network
+     *
+     * @param <T> type of the content
+     * @param envelope
+     * @param content
+     * @return the message
+     */
+    public static <T> Message<T> restore(Envelope envelope, T content) {
+        return new Message<>(envelope, content);
+    }
+
+    /**
+     *
+     * @return everything but the content
+     */
+    public Envelope getEnvelope() {
+        return new Envelope(id, created, conversationId, sender, receivers, targets, priority, expiresAt, ttl, headers);
+    }
+
+    /**
      * Copy of the message : same id, same envelope (copied), same content
      * instance
      *

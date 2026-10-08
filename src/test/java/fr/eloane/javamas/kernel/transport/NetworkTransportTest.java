@@ -73,6 +73,21 @@ class NetworkTransportTest {
         assertEquals(Message.DEFAULT_TTL - 1, received.getTtl(), "relayed once by b");
     }
 
+    @Test
+    void tcpWithJsonCodec() throws Exception {
+        TcpTransport server = new TcpTransport(0, List.of(), javax.net.ServerSocketFactory.getDefault(),
+                javax.net.SocketFactory.getDefault(), new JsonCodec());
+        a.addTransport(server);
+        b.addTransport(new TcpTransport(-1, List.of(new InetSocketAddress(LOCALHOST, server.getLocalPort())),
+                javax.net.ServerSocketFactory.getDefault(), javax.net.SocketFactory.getDefault(), new JsonCodec()));
+        waitFor(() -> server.getConnectionCount() == 1);
+
+        TestAgent sender = new TestAgent(b);
+        TestAgent receiver = new TestAgent(a);
+        sender.send(new Message<>(java.util.Map.of("text", "json")).to(receiver.getAddress()));
+        assertEquals(java.util.Map.of("text", "json"), receiver.next(Duration.ofSeconds(5)).getContent());
+    }
+
     private static void waitFor(java.util.function.BooleanSupplier condition) throws InterruptedException {
         long end = System.nanoTime() + Duration.ofSeconds(5).toNanos();
         while (!condition.getAsBoolean()) {

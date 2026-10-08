@@ -12,6 +12,9 @@ repositories {
 }
 
 dependencies {
+    // JSON codec
+    implementation("tools.jackson.core:jackson-databind:3.2.3")
+
     testImplementation(platform("org.junit:junit-bom:5.13.4"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
@@ -34,8 +37,8 @@ tasks.compileJava {
 }
 
 val examples: SourceSet by sourceSets.creating {
-    compileClasspath += sourceSets.main.get().output
-    runtimeClasspath += sourceSets.main.get().output
+    compileClasspath += sourceSets.main.get().output + sourceSets.main.get().compileClasspath
+    runtimeClasspath += sourceSets.main.get().output + sourceSets.main.get().runtimeClasspath
 }
 
 // ./gradlew runExample -Pexample=network.TcpPingPong [--args="..."]

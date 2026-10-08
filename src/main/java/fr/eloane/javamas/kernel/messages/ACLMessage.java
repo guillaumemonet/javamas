@@ -49,6 +49,23 @@ public final class ACLMessage extends Message<String> {
         this.performative = Objects.requireNonNull(performative);
     }
 
+    private ACLMessage(Envelope envelope, Performative performative, String content) {
+        super(envelope, content);
+        this.performative = Objects.requireNonNull(performative);
+    }
+
+    /**
+     * Rebuild a message from its envelope, e.g. received from the network
+     *
+     * @param envelope
+     * @param performative
+     * @param content
+     * @return the message
+     */
+    public static ACLMessage restore(Envelope envelope, Performative performative, String content) {
+        return new ACLMessage(envelope, performative, content);
+    }
+
     @Override
     public ACLMessage copy() {
         return (ACLMessage) super.copy();
